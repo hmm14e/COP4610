@@ -2,11 +2,18 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 
 #define SH_LINE_BUFFSIZE 255
 #define SH_TOKEN_BUFFSIZE 255
 #define SH_TOKEN_DELIMS " \t\n\r"
 
+
+void _print_args(char** args) {
+    for (char *s = *args; s != NULL; s=*++args)
+        printf("%s ", s);
+    printf("\n");
+}
 
 /**
  * sh_read_line - read shell user input from stdin
@@ -83,17 +90,62 @@ char **sh_parse_line(char *line)
     return tokens;
 }
 
+
+bool _is_env_variable(char* tok)
+{
+    return tok && tok[0] == '$';
+}
+
+/**
+ * strstrcpy - very unsafe function to copy the args (char**) into a copy (char**)
+*/
+char **strstrcpy(char** src) {
+    char** cpy = malloc((SH_TOKEN_BUFFSIZE) * sizeof(char*));
+    int i = 0;
+    char* s = *src;
+    for (;s != NULL && i < SH_TOKEN_BUFFSIZE; s=*++src, i++)
+        cpy[i] = strdup(s);
+    cpy[i] = NULL;
+    return cpy;
+}
+
+/*
+ * sh_expand_args - expand environment variables in args
+ * @args: array of char* denoting the arguments
+ * @returns: copy of args with environment variables expanded
+ */
+char **sh_expand_args(char** args)
+{
+    int i = 0;
+    char **cpy = strstrcpy(args);
+    char **cpy_begin = cpy;
+    for (char *s = *cpy; s != NULL; s=*++cpy) {
+        if (_is_env_variable(s)) {
+            char* env_val = getenv(s + 1);
+            if (!env_val){
+                /* DO SOMETHING */
+            }
+            free(cpy[i]);
+            cpy[i] = env_val;
+        }
+    }
+    return cpy_begin;
+}
+
 /**
  * sh_start - loop getting commands and executing them
  */
 void sh_start()
 {
     char *line;
-    char **args;
+    char **args, **expanded_args;
     do {
         printf("> ");
         line = sh_read_line();
         args = sh_parse_line(line);
+        _print_args(args);
+        expanded_args = sh_expand_args(args);
+        _print_args(expanded_args);
         free(line);
         free(args);
     } while(1);
