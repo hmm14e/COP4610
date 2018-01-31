@@ -6,8 +6,8 @@
 
 #define SH_LINE_BUFFSIZE 255
 #define SH_TOKEN_BUFFSIZE 255
+#define SH_PATH_BUFFSIZE 255
 #define SH_TOKEN_DELIMS " \t\n\r"
-
 
 void _print_args(char** args) {
     for (char *s = *args; s != NULL; s=*++args)
@@ -96,6 +96,11 @@ bool _is_env_variable(char* tok)
     return tok && tok[0] == '$';
 }
 
+bool _is_path(char* tok)
+{
+    return tok && (tok[0] == '/' || tok[0] == '.' || tok[0] == '~');
+}
+
 /**
  * strstrcpy - very unsafe function to copy the args (char**) into a copy (char**)
 */
@@ -119,17 +124,34 @@ char **sh_expand_args(char** args)
     int i = 0;
     char **cpy = strstrcpy(args);
     char **cpy_begin = cpy;
-    for (char *s = *cpy; s != NULL; s=*++cpy) {
-        if (_is_env_variable(s)) {
-            char* env_val = getenv(s + 1);
+    for (char *tok = *cpy; tok != NULL; tok=*++cpy) {
+        if (_is_env_variable(tok)) {
+            printf("envtok: <%s>\n", tok);
+            char* env_val = getenv(tok + 1);
             if (!env_val){
                 /* DO SOMETHING */
             }
             free(cpy[i]);
             cpy[i] = env_val;
         }
+        else if (_is_path(tok)){
+            printf("pathtok: <%s>\n", tok);
+            char* resolved_path = malloc((SH_PATH_BUFFSIZE) * sizeof(char));
+            printf("realpathtok: <%s>\n", realpath(tok, resolved_path));
+        }
+        else {
+            printf("regtok: <%s>\n", tok);
+        }
     }
     return cpy_begin;
+}
+
+
+/**
+ sh_prompt - prints $USER@$MACHINE :: PWD =>
+ */
+void sh_prompt() {
+    printf("%s@%s :: %s => ", getenv("USER"), getenv("MACHINE"), getenv("PWD"));
 }
 
 /**
@@ -140,7 +162,7 @@ void sh_start()
     char *line;
     char **args, **expanded_args;
     do {
-        printf("> ");
+        sh_prompt();
         line = sh_read_line();
         args = sh_parse_line(line);
         _print_args(args);
