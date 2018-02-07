@@ -16,12 +16,16 @@ void command_free();
 
 typedef struct _CommandGroup CommandGroup;
 
+/*
+ * command_group_create - Default constructor for CommandGroup
+ * Will initalize an empty commands array to
+ */
 CommandGroup *command_group_create();
 
 CommandGroup *command_group_create_from_tokens(char** tokens);
 
-void command_group_insert_command(CommandGroup* cmds);
+void command_group_insert_command(CommandGroup* cmd_grp);
 
-void command_group_execute(CommandGroup* cmds);
+void command_group_execute(CommandGroup* cmd_grp);
 
-void command_group_print(CommandGroup* cmds);
+void command_group_print(CommandGroup* cmd_grp);

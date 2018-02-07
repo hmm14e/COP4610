@@ -78,7 +78,7 @@ void command_free(Command* cmd)
  */
 CommandGroup *command_group_create()
 {
-
+    return NULL;
 }
 
 /*
@@ -87,13 +87,13 @@ CommandGroup *command_group_create()
  */
 CommandGroup *command_group_create_from_tokens(char** tokens)
 {
-
+    return NULL;
 }
 
 /*
  * Executes the CommandGroup, accounting for pipes, redirections, and background
  */
-void command_group_execute(CommandGroup *cmd_group)
+void command_group_execute(CommandGroup *cmd_grp)
 {
 
 }
@@ -103,9 +103,17 @@ void command_group_execute(CommandGroup *cmd_group)
 /*
  * Deallocate all memory the CommandGroup had allocated
  */
-void command_group_free(CommandGroup *cmd_group)
+void command_group_free(CommandGroup *cmd_grp)
 {
 
 }
 
+
+/*
+ *
+ */
+void command_group_print(CommandGroup* cmd_grp)
+{
+
+}
 
