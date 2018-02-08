@@ -22,14 +22,43 @@ char* str_tok(char* str, const char* delims)
 }
 
 
+/* split the str by delims into tokens */
+char **str_split(char *str, const char *delims)
+{
+    /* first create copy of str since sh_strtok modified in place */
+    char *cpy = calloc(strlen(str) + 1, sizeof(char));
+    strcpy(cpy, str);
+
+    int n_delims;
+    for (int i = 0; i < strlen(cpy); i++)
+        if (strchr(delims, cpy[i]))
+            n_delims++;
+
+    /* n_delims splits a str into (n_delims + 1) tokens */
+    char **tokens = calloc(n_delims + 1, sizeof(char *));
+    /* use strtok to break up cpy into tokens */
+    char *tok = cpy;
+    int i = 0;
+    while ((tok = strtok(tok, delims)) != NULL)) {
+        tokens[i++] = tok;
+        tok = NULL; /* see sh_strtok implementation */
+    }
+    return tokens;
+}
+
+
 char** strstr_copy(char** src)
 {
-    /* 255 is a simple hard upperbound (see specification) */
-    char** cpy = malloc((256) * sizeof(char*));
-    int i = 0;
-    char* s = *src;
-    for (;s != NULL && i < 256; s=*++src, i++)
-        cpy[i] = strdup(s);
+    /* unsafe way to find the length of `src` */
+    int i;
+    for (i = 0; src[i] != NULL; i++);
+
+    /* assign duplicate of each string in `src` to `cpy` */
+    char** cpy = calloc((i + 1), sizeof(char*));
+    if (!cpy)
+        return NULL;
+    for (i = 0;; src[i] != NULL; i++)
+        cpy[i] = strdup(src[i]);
     cpy[i] = NULL;
     return cpy;
 }
@@ -78,4 +107,19 @@ char *str_replace(char *orig, char *rep, char *with)
     }
     strcpy(tmp, orig);
     return result;
+}
+
+
+/* combine str1 and str2 into a copy */
+char *str_combine(char *str1, char *str2)
+{
+    size_t len1 = strlen(str1), len2 = strlen(str2)
+    char *combined = calloc(len1 + len2 + 1, sizeof(char));
+    for (int i = 0; i < len1; i++)
+        combined[i] = str1[i];
+    for (int i = 0; i < len2; i++)
+        /* account for offset */
+        combined[len1 + i] = str2[i];
+    combined[len1 + len2] = '\0';
+    return combined;
 }
