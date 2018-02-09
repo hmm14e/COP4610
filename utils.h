@@ -41,4 +41,4 @@ char *str_replace(char *orig, char *rep, char *with);
  * str_combine - combines str1 and str2 in a copy
  * @return: COPY of the two strings combined, NULL if failed to allocate
  */
-char **str_combine(char *str1, char *str2);
+char *str_combine(char *str1, char *str2);

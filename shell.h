@@ -114,11 +114,11 @@ char **sh_expand_env_vars(char** args);
 
 
 /**
- * sh_resolve_paths - expands the paths of commands to their absolute path
+ * sh_expand_paths - expands the paths of commands to their absolute path
  * @args: array of char* denoting the arguments
  * @returns: copy of args with all the paths expanded to absolute paths
  */
-char **sh_resolve_paths(char** args);
+char **sh_expand_paths(char** args);
 
 
 

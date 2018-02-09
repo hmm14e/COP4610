@@ -85,7 +85,7 @@ CommandGroup *command_group_create()
  * Specialized constructor for CommandGroup, will create a CommandGroup from a sequence of tokens
  * e.g. ["ls", "-al", "|", "grep", "foo", ">", "outfile", "<", "infile"]
  */
-CommandGroup *command_group_create_from_tokens(char** tokens)
+CommandGroup *command_group_from_tokens(char** tokens)
 {
     return NULL;
 }

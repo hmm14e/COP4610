@@ -22,7 +22,7 @@ typedef struct _CommandGroup CommandGroup;
  */
 CommandGroup *command_group_create();
 
-CommandGroup *command_group_create_from_tokens(char** tokens);
+CommandGroup *command_group_from_tokens(char** tokens);
 
 void command_group_insert_command(CommandGroup* cmd_grp);
 

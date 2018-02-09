@@ -1,48 +1,50 @@
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "utils.h"
 
 
-char* str_tok(char* str, const char* delims)
+char *str_tok(char * str, const char * delim)
 {
-    static char* lasts;
-   int ch;
-   if (str == 0)
-       str = lasts;
-   /* move str up until not at delim or end of string */
-   do {
-       if ((ch = *str++) == '\0')
-           return NULL;
-   } while (strchr(delims, ch));
-   --str;
-   lasts = str + strcspn(str, delims);
-   if (*lasts != 0)
-       *lasts++ = 0;
-   return str;
+    static char* p=0;
+    if(str)
+        p=str;
+    else if(!p)
+        return 0;
+    str=p+strspn(p,delim);
+    p=str+strcspn(str,delim);
+    if(p==str)
+        return p=0;
+    p = *p ? *p=0,p+1 : 0;
+    return str;
 }
-
 
 /* split the str by delims into tokens */
 char **str_split(char *str, const char *delims)
 {
-    /* first create copy of str since sh_strtok modified in place */
+    /* first create copy of str since sh_strtok modifies in place */
     char *cpy = calloc(strlen(str) + 1, sizeof(char));
     strcpy(cpy, str);
 
-    int n_delims;
+    int n_delims = 0;
     for (int i = 0; i < strlen(cpy); i++)
         if (strchr(delims, cpy[i]))
             n_delims++;
 
     /* n_delims splits a str into (n_delims + 1) tokens */
-    char **tokens = calloc(n_delims + 1, sizeof(char *));
+    char **tokens = calloc(n_delims + 2, sizeof(char *));
+    if (!tokens) {
+        fprintf(stderr, "failed to allocate\n");
+        return NULL;
+    }
     /* use strtok to break up cpy into tokens */
     char *tok = cpy;
     int i = 0;
-    while ((tok = strtok(tok, delims)) != NULL)) {
-        tokens[i++] = tok;
+    while ((tok = str_tok(tok, delims)) != NULL) {
+        tokens[i++] = strdup(tok);
         tok = NULL; /* see sh_strtok implementation */
     }
+    free(cpy);
     return tokens;
 }
 
@@ -57,7 +59,7 @@ char** strstr_copy(char** src)
     char** cpy = calloc((i + 1), sizeof(char*));
     if (!cpy)
         return NULL;
-    for (i = 0;; src[i] != NULL; i++)
+    for (i = 0; src[i] != NULL; i++)
         cpy[i] = strdup(src[i]);
     cpy[i] = NULL;
     return cpy;
@@ -113,7 +115,7 @@ char *str_replace(char *orig, char *rep, char *with)
 /* combine str1 and str2 into a copy */
 char *str_combine(char *str1, char *str2)
 {
-    size_t len1 = strlen(str1), len2 = strlen(str2)
+    size_t len1 = strlen(str1), len2 = strlen(str2);
     char *combined = calloc(len1 + len2 + 1, sizeof(char));
     for (int i = 0; i < len1; i++)
         combined[i] = str1[i];

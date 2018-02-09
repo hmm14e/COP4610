@@ -121,17 +121,16 @@ bool _is_path_variable(char* tok)
 char **sh_expand_env_vars(char** args)
 {
     if (!args) return NULL;
-
     /* create copy instead of modifying in place */
     char **expanded_args = strstr_copy(args);
+    /* check each token for a leading env varialbe, replace if found */
     for(int i = 0; expanded_args[i] != NULL; i++){
         char *arg = expanded_args[i];
         if (_is_env_variable(arg)) {
             /* copy the env_var name into separate variable */
             int env_var_len = _get_env_var_len(arg); /* including $ */
             char *env_var = calloc(env_var_len + 1, sizeof(char));
-            if (!env_var)
-                continue;
+            /* extract the env_var from the arg */
             strncpy(env_var, arg, env_var_len);
 
             /* lookup the value, and replace the variable with the actual value */
@@ -140,11 +139,10 @@ char **sh_expand_env_vars(char** args)
                 fprintf(stderr, "environment variable not found\n");
                 continue;
             }
-
             char *expanded = str_replace(arg, env_var, env_var_val);
             if (!expanded)
                 continue;
-            /* update to expanded argen */
+            /* update to expanded arg */
             free(expanded_args[i]);
             expanded_args[i] = expanded;
         }
@@ -163,10 +161,27 @@ bool _is_builtin(char *cmd) {
 
 
 /**
+ * we define a command as an argument that is the first token OR is directly after a pipe '|'
+ * return 0: arg, 1: cd 2: built-in command, 3: external command
+ */
+int _is_command(char **args, int i)
+{
+    if (i != 0 && strcmp(args[i - 1], "|") != 0)
+        return 0;
+    else if (strcmp(args[i], "cd") == 0)
+        return 1;
+    else if (_is_builtin(args[i]))
+        return 2;
+    else
+        return 3;
+}
+
+
+/**
  * resolve paths by resolving '.'s, '..'s and '~'s,
  * returns NULL on failure to expand
  */
-char *resolve_path(char* path) {
+char *_resolve_path(char* path) {
     /* if ~, first prepend $HOME to the path, then proceed */
     char *new_path;
     if (path[0] == '~')
@@ -189,7 +204,7 @@ char *resolve_path(char* path) {
 
 
 /* searches $PATH for the first matching path and returns the full path*/
-char *match_path(char *executable)
+char *_match_path(char *executable)
 {
     /* create copy of getenv("PATH") becayse str_split modifies it */
     char **dirs = str_split(getenv("PATH"), ":");
@@ -208,22 +223,6 @@ char *match_path(char *executable)
 }
 
 
-
-/**
- * we define a command as an argument that is the first token OR is directly after a pipe '|'
- * return 0: arg, 1: cd 2: built-in command, 3: external command
- */
-int _is_command(char **args, int i)
-{
-    if (i != 0 && strcmp(args[i - 1], "|") != 0)
-        return 0;
-    else if (strcmp(args[i], "cd") == 0)
-        return 1;
-    else if (_is_builtin(args[i]))
-        return 2;
-    else
-        return 3;
-}
 
 
 /**
@@ -250,10 +249,10 @@ char** sh_expand_paths(char** args)
                 char *expanded_path;
                 if (strchr(arg, '/'))
                     /* expand relative path */
-                    expanded_path = resolve_path(arg);
+                    expanded_path = _resolve_path(arg);
                 else
                     /* search the $PATH */
-                    expanded_path = match_path(arg);
+                    expanded_path = _match_path(arg);
 
                 /* error out on broken path  */
                 if (!expanded_path) {
@@ -308,13 +307,17 @@ void sh_loop()
             _print_args(exp_path_args);
         }
 
+        /* create command group and execute */
+        CommandGroup * cmd_grp = command_group_from_tokens(exp_path_args);
+        command_group_print(cmd_grp);
+
 
         /* cleanup */
         free(line);
         free(whitespaced_line);
-        free(args);
-        free(exp_env_args);
-        free(exp_path_args);
+        _free2d(args);
+        _free2d(exp_env_args);
+        _free2d(exp_path_args);
     } while(1);
 }
 
