@@ -56,6 +56,21 @@ bool _is_builtin_cmd(char *tok);
 int _is_command(char **args, int i);
 
 
+/**
+ * _resolve_path - resolves all '.'s, '..s', and leading '~' in a path
+ * @path: path to be resolved
+ * @return: the resolved path, NULL if failed allocation or not valid path
+ */
+char *_resolve_path(char *path);
+
+
+/**
+ * _match_path - finds first matching directory in the $PATH that contains `executable`
+ * @executable - the name of the executable file
+ * @return: the absolute path to the executable, NULL if no match or no execute permissions on match(s)
+ */
+char *_match_path(char *executable);
+
 
 /**
  ************************************************************************************
