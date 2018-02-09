@@ -4,7 +4,6 @@
 #include <string.h>
 #include <stdbool.h>
 #include <errno.h>
-#include <limits.h>
 #include <ctype.h>
 #include <unistd.h>
 #include "shell.h"
@@ -191,7 +190,7 @@ char *_resolve_path(char* path) {
         new_path = str_combine(path, "");
 
     /* defer to realpath() to resolve '.'s and '..'s */
-    char *realpath_buffer = calloc(PATH_MAX, sizeof(char));
+    char *realpath_buffer = NULL;
     char *ret = realpath(new_path, realpath_buffer);
     free(new_path);
     if (!ret){
