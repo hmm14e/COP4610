@@ -31,40 +31,16 @@ void sh_exit(char **args)
 	exit(0);
 }
 
-
-/**
- * args[0] is echo
- */
 void sh_echo(char **args)
 {
 	int i = 1;
-	char* evar;
 
 	while( args[i] != NULL ){
-		/* for non environment variables*/
-		if( args[i][0] != '$' )
-			fprintf("%s ", args[i]);
-		else{
-			/*for environment variable*/	
-			char nextarg[strlen(args[i])];
-			char* x = &(args[i][1]);	
-			char* y = nextarg;
-
-			while(*x != '\0'){
-				*y = *x;
-				x++;
-				y++;
-			}
-			*y = *x;
-			if(evar = getenv(nextarg))
-				fprintf("%s ", evar);	
-			else
-				fprintf(stderr, "(%s: Variable undefined) ", nextarg);
-		}
+		/* environment variables are already expanded in sh_loop*/
+		fprintf("%s ", args[i]);
 		i++;
 	}
 	fprintf("\n");
-
 }
 
 
