@@ -3,17 +3,22 @@
  */
 
 
-#define SH_LINE_BUFFSIZE 255
-#define SH_TOKEN_BUFFSIZE 255
-#define  SH_PATH_BUFFSIZE 255
-#define SH_TOKEN_DELIMS " \t\n\r"
-
 /**
  ************************************************************************************
  ********************************* Helper Functions *********************************
  ************************************************************************************
  */
 
+
+/**
+ * _print_args - prints each element in 2d array
+ */
+void _print_args(char** args);
+
+/**
+ * free2d - frees a 2d allocated array
+ */
+void _free2d(char **arr);
 
 /**
  * _is_evn_variable - returns whether a token is referencing an environment variable
@@ -33,6 +38,23 @@ int _get_env_var_len(char* tok);
  * _is_path_variable - returns whether a token is a path to some file
  */
 bool _is_path_variable(char* tok);
+
+
+/**
+ * _is_builtin_cmd - returns whether a command is a builtin
+ * echo, etime, exit, io
+ */
+bool _is_builtin_cmd(char *tok);
+
+
+/**
+ * _is_command - returns whether the `i`th arg in `args` is a command
+ * @args: array of tokenized strings
+ * @i: the argument to check
+ * @returns: 0-arg, 1-cd, 2-built-in command, 3-external command
+ */
+int _is_command(char **args, int i);
+
 
 
 /**
@@ -57,7 +79,7 @@ char *sh_read_line();
  * @return: copy of the line with added whitespace
  * e.g. 'ls -al|grep me>outfile <infile' --> 'ls -al | grep me > outfile  <infile'
  */
-char *sh_add_whitespace(char *line, char *chars);
+char *sh_add_whitespace(char *line, const char *chars);
 
 
 /**
@@ -77,7 +99,7 @@ char **sh_expand_env_vars(char** args);
 
 
 /**
- * sh_resolve_paths - resolve pathnames
+ * sh_resolve_paths - expands the paths of commands to their absolute path
  * @args: array of char* denoting the arguments
  * @returns: copy of args with all the paths expanded to absolute paths
  */
