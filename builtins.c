@@ -1,9 +1,15 @@
-/**
- *
+/** args[0] is always 'ch' and args[1] is the path
+ * if there is more than one path, signal an error
  */
 int sh_cd(char ** args)
 {
-    return 0;
+	if (args[1] == NULL)
+		chdir(getenv("HOME"));
+	if (args[2] != NULL)
+		fprintf(stderr, "ch: command not found\n");
+	else
+		chdir(args[1]);
+	return 0;
 }
 
 
@@ -21,7 +27,8 @@ double sh_etime(char **args)
  */
 void sh_exit(char **args)
 {
-
+	fprintf(stderr, "Exiting Shell....\n");
+	exit(0);
 }
 
 
