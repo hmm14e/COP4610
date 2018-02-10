@@ -26,14 +26,6 @@ void _print_args(char** args)
 }
 
 
-void _free2d(char **arr)
-{
-    for (int i = 0; arr[i] != NULL; i++)
-        free(arr[i]);
-    free(arr);
-}
-
-
 char *sh_read_line()
 {
     char *buffer = calloc(SH_LINE_BUFFSIZE, sizeof(char));

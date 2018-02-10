@@ -1,17 +1,23 @@
-/** args[0] is always 'ch' and args[1] is the path
- * if there is more than one path, signal an error
- */
 #include <time.h>
 #include <sys/time.h>
+#include <unistd.h>
+#include "utils.h"
+
+
+/** args[0] is always 'cd' and args[1] is the path
+ * if there is more than one path, signal an error
+ */
 int sh_cd(char ** args)
 {
-	if (args[1] == NULL)
-		chdir(getenv("HOME"));
-	if (args[2] != NULL)
-		fprintf(stderr, "ch: command not found\n");
-	else
-		chdir(args[1]);
-	return 0;
+    if (args[1] == NULL)
+        chdir(getenv("HOME"));
+
+    /* more than 1 arg */
+    else if (args[2] != NULL)
+        fprintf(stderr, "cd: error\n");
+    else
+        chdir(args[1]);
+    return 0;
 }
 
 
@@ -20,14 +26,21 @@ int sh_cd(char ** args)
  */
 double sh_etime(char **args)
 {
+    /* clip etime off command
+        args now holds just the cmd
+     */
+    int i = 0;
+    char ** args_cpy = strstr_copy(args + 1);
     struct timeval start, end;
     gettimeofday(&start, NULL);
 
-    //do command
+    /* exec command */
     gettimeofday(&end, NULL);
 
     int t = end.tv_usec - start.tv_usec;
 
+    _free2d(args_cpy);
+    
     return ((double)t / 100000);
 }
 
@@ -37,27 +50,33 @@ double sh_etime(char **args)
  */
 void sh_exit(char **args)
 {
-	fprintf(stderr, "Exiting Shell....\n");
-	exit(0);
+    fprintf(stderr, "Exiting Shell....\n");
+    exit(0);
 }
 
 void sh_echo(char **args)
 {
-	int i = 1;
-
-	while( args[i] != NULL ){
-		/* environment variables are already expanded in sh_loop*/
-		fprintf("%s ", args[i]);
-		i++;
-	}
-	fprintf("\n");
+    int i = 1;
+    while( args[i] != NULL ){
+        /* environment variables are already expanded in sh_loop*/
+        fprintf("%s ", args[i]);
+        i++;
+    }
+    fprintf("\n");
 }
 
 
-/**
- * don't know the return type for this one
- */
 void sh_io(char **args)
 {
+    pid_t pid = fork();
 
+    if (pid == 0){
+        /*execute command */ 
+    }
+
+    else{
+        /*wait for child process*/
+        /*need to get data in /proc/pid/io*/
+        waitpid(pid, NULL, 0);
+    }
 }

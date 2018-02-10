@@ -4,6 +4,12 @@
 
 
 /**
+ * free2d - frees a 2d allocated array
+ */
+void _free2d(char **arr);
+
+
+/**
  * strtok - sequence of calls to this function split str into tokens, which are sequences of contiguous characters
  *             separated by any of the characters that are part of delimiters.
  * @str: on first call, str is start of line to be tokenized, on subsequent calls  the function expects a null pointer

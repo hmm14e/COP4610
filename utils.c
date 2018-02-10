@@ -4,6 +4,14 @@
 #include "utils.h"
 
 
+void _free2d(char **arr)
+{
+    for (int i = 0; arr[i] != NULL; i++)
+        free(arr[i]);
+    free(arr);
+}
+
+
 char *str_tok(char * str, const char * delim)
 {
     static char* p=0;

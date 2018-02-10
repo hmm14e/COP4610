@@ -15,10 +15,7 @@
  */
 void _print_args(char** args);
 
-/**
- * free2d - frees a 2d allocated array
- */
-void _free2d(char **arr);
+
 
 
 /**
