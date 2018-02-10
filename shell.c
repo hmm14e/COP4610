@@ -36,7 +36,7 @@ void _free2d(char **arr)
 
 char *sh_read_line()
 {
-    char *buffer = malloc(sizeof(char) * SH_LINE_BUFFSIZE);
+    char *buffer = calloc(SH_LINE_BUFFSIZE, sizeof(char));
     if (!buffer) {
         perror("Failed to allocate line buffer");
         return 0;
@@ -70,6 +70,7 @@ char *sh_add_whitespace(char *line, const char *chars)
         ret = str_replace(tmp, old, new);
         if (!ret)
             continue;
+        /* free the old, and set the new */
         free(tmp);
         tmp = ret;
     }
@@ -83,6 +84,29 @@ char **sh_parse_line(char *line)
     if (!tokens)
         exit(-1);
     return tokens;
+}
+
+
+/* return true if there are no parsing errors */
+/* this function should only be called after `sh_add_whitespace`, assuring that '&', '|', '<', '>' are all alone */
+bool _is_well_formed(char **args)
+{
+    for (int i = 0; args[i] != NULL; i++) {
+        /* can't have '&' anywhere but beginning and end */
+        if (strcmp(args[i], "&") == 0)
+            if (i != 0 && args[i + 1] != NULL)
+                return false;
+        /*  any '>', '<', '|' must have a "command" before AND after it */
+        if (strcmp(args[i], "<") == 0 || strcmp(args[i], ">") == 0 || strcmp(args[i], "|") == 0) {
+            /* if before of after are empty, clearly there is no command */
+            if (i == 0 || !args[i - 1] || !args[i + 1])
+                return false;
+            /* now check to see that the args before or after it are "commands", e.g. not '<', '>', '|' or '&' */
+            if (strchr(SH_SPECIAL_CHARS, args[i - 1][0]) || strchr(SH_SPECIAL_CHARS, args[i + 1][0]))
+                return false;
+        }
+    }
+    return true;
 }
 
 
@@ -207,14 +231,17 @@ char *_match_path(char *executable)
 {
     /* create copy of getenv("PATH") becayse str_split modifies it */
     char **dirs = str_split(getenv("PATH"), ":");
+    char *ret = NULL;
     for (int i = 0; dirs[i] != NULL; i++){
         /* append '/' to the dir */
         char *dir_slash = str_combine(dirs[i], "/");
         char *filepath = str_combine(dir_slash, executable);
         free(dir_slash);
         /* X_OK checks for execute permission */
-        if (access(filepath, X_OK) != -1)
-            return filepath;
+        if (access(filepath, X_OK) != -1){
+            ret = filepath;
+            break;
+        }
         free(filepath);
     }
     _free2d(dirs);
@@ -291,6 +318,13 @@ void sh_loop()
         printf("after parsing line: ");
         _print_args(args);
 
+        if (!_is_well_formed(args)) {
+            fprintf(stderr, "sh: parsing error\n");
+            free(line);
+            free(whitespaced_line);
+            _free2d(args);
+            continue;
+        }
 
         /* expand env variables, resolve paths */
         exp_env_args = sh_expand_env_vars(args);

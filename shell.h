@@ -20,6 +20,16 @@ void _print_args(char** args);
  */
 void _free2d(char **arr);
 
+
+/**
+ * _is_well_formed - returns whether a command is of valid form, i.e. no parsing errors
+ * @args: the parsed array of args
+ * NOTE: Parsing errors include redirects with no corresponding file, pipes with no corresponding commands,
+ *       and ampersands in the middle of a command, e.g. "| ls", "ls >", "ls & |"
+ */
+bool _is_well_formed(char **args);
+
+
 /**
  * _is_evn_variable - returns whether a token is referencing an environment variable
  * NOTE: this function only deals with environment variables at the start of a token
@@ -45,6 +55,8 @@ bool _is_path_variable(char* tok);
  * echo, etime, exit, io
  */
 bool _is_builtin_cmd(char *tok);
+
+
 
 
 /**

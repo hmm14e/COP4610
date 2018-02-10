@@ -35,6 +35,7 @@ char **str_split(char *str, const char *delims)
     char **tokens = calloc(n_delims + 2, sizeof(char *));
     if (!tokens) {
         fprintf(stderr, "failed to allocate\n");
+        free(cpy);
         return NULL;
     }
     /* use strtok to break up cpy into tokens */
