@@ -35,7 +35,7 @@ bool _is_well_formed(char **args);
  * NOTE: this function only deals with environment variables at the start of a token
  * e.g. ls $HOME or ls $PWD/<somedir>
  */
-bool _is_env_variable(char* tok);
+bool _contains_env_variable(char* tok);
 
 
 /**

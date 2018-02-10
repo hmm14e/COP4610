@@ -94,23 +94,29 @@ bool _is_well_formed(char **args)
     for (int i = 0; args[i] != NULL; i++) {
         /* can't have '&' anywhere but beginning and end */
         if (strcmp(args[i], "&") == 0)
-            if (i != 0 && args[i + 1] != NULL)
+            if (i != 0 && args[i + 1] != NULL){
+                fprintf(stdout, "sh: parsing error near &\n");
                 return false;
+            }
         /*  any '>', '<', '|' must have a "command" before AND after it */
         if (strcmp(args[i], "<") == 0 || strcmp(args[i], ">") == 0 || strcmp(args[i], "|") == 0) {
             /* if before of after are empty, clearly there is no command */
-            if (i == 0 || !args[i - 1] || !args[i + 1])
+            if (i == 0 || !args[i - 1] || !args[i + 1]){
+                fprintf(stdout, "sh: parsing error near %s\n", args[i]);
                 return false;
+            }
             /* now check to see that the args before or after it are "commands", e.g. not '<', '>', '|' or '&' */
-            if (strchr(SH_SPECIAL_CHARS, args[i - 1][0]) || strchr(SH_SPECIAL_CHARS, args[i + 1][0]))
+            if (strchr(SH_SPECIAL_CHARS, args[i - 1][0]) || strchr(SH_SPECIAL_CHARS, args[i + 1][0])) {
+                fprintf(stdout, "sh: parsing error near %s\n", args[i]);
                 return false;
+            }
         }
     }
     return true;
 }
 
 
-bool _is_env_variable(char* tok)
+bool _contains_env_variable(char* tok)
 {
     if (strlen(tok) <= 1)
         return false;
@@ -137,7 +143,7 @@ bool _is_path_variable(char* tok)
 }
 
 
-/*
+/**
  * expands all environment variables found in the args
  * assumes that environment variables only start at the beginning of a token
  */
@@ -146,25 +152,22 @@ char **sh_expand_env_vars(char** args)
     if (!args) return NULL;
     /* create copy instead of modifying in place */
     char **expanded_args = strstr_copy(args);
-    /* check each token for a leading env varialbe, replace if found */
+    /* check each token for a leading env variable, replace if found */
     for(int i = 0; expanded_args[i] != NULL; i++){
         char *arg = expanded_args[i];
-        if (_is_env_variable(arg)) {
-            /* copy the env_var name into separate variable */
+        if (_contains_env_variable(arg)) {
+            /* extract the env_var from the arg */
             int env_var_len = _get_env_var_len(arg); /* including $ */
             char *env_var = calloc(env_var_len + 1, sizeof(char));
-            /* extract the env_var from the arg */
             strncpy(env_var, arg, env_var_len);
 
             /* lookup the value, and replace the variable with the actual value */
             char *env_var_val = getenv(env_var + 1); /* +1 excludes $ */
-            if (!env_var_val){
-                fprintf(stderr, "environment variable not found\n");
-                continue;
-            }
-            char *expanded = str_replace(arg, env_var, env_var_val);
-            if (!expanded)
-                continue;
+            char *expanded;
+            if (env_var_val)
+                expanded = str_replace(arg, env_var, env_var_val);
+            else
+                expanded = str_replace(arg, env_var, "");
             /* update to expanded arg */
             free(expanded_args[i]);
             expanded_args[i] = expanded;
@@ -219,7 +222,7 @@ char *_resolve_path(char* path) {
     free(new_path);
     if (!ret){
         free(realpath_buffer);
-        perror("expand_path");
+        fprintf(stdout, "sh: no such file or directory: %s\n", path);
         return NULL;
     }
     return ret;
@@ -244,8 +247,10 @@ char *_match_path(char *executable)
         }
         free(filepath);
     }
+    if (!ret)
+        fprintf(stdout, "sh: command not found: %s\n", executable);
     _free2d(dirs);
-    return NULL;
+    return ret;
 }
 
 
@@ -282,8 +287,7 @@ char** sh_expand_paths(char** args)
 
                 /* error out on broken path  */
                 if (!expanded_path) {
-                    fprintf(stderr, "no such file or directory %s\n", arg);
-                    //_free2d(expanded_args);
+                    _free2d(expanded_args);
                     return NULL;
                 }
                 /* successful resolve */
@@ -319,26 +323,24 @@ void sh_loop()
         _print_args(args);
 
         if (!_is_well_formed(args)) {
-            fprintf(stderr, "sh: parsing error\n");
-            free(line);
-            free(whitespaced_line);
-            _free2d(args);
+            free(line); free(whitespaced_line); _free2d(args);
             continue;
         }
 
-        /* expand env variables, resolve paths */
+        /* expand env variables */
         exp_env_args = sh_expand_env_vars(args);
-        if (exp_env_args){
-            printf("after expanding env vars: ");
-            _print_args(exp_env_args);
-        }
+        printf("after expanding env vars: ");
+        _print_args(exp_env_args);
 
 
+        /* expand commands to absolute paths */
         exp_path_args = sh_expand_paths(exp_env_args);
-        if (exp_path_args){
-            printf("after resolving paths: ");
-            _print_args(exp_path_args);
+        if (!exp_path_args){
+            free(line); free(whitespaced_line); _free2d(args); _free2d(exp_env_args);
+            continue;
         }
+         printf("after resolving paths: ");
+        _print_args(exp_path_args);
 
         /* create command group and execute */
         CommandGroup * cmd_grp = command_group_from_tokens(exp_path_args);
@@ -346,11 +348,8 @@ void sh_loop()
 
 
         /* cleanup */
-        free(line);
-        free(whitespaced_line);
-        _free2d(args);
-        _free2d(exp_env_args);
-        _free2d(exp_path_args);
+        free(line); free(whitespaced_line); _free2d(args); _free2d(exp_env_args); _free2d(exp_path_args);
+
     } while(1);
 }
 
