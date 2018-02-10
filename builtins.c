@@ -1,6 +1,8 @@
 /** args[0] is always 'ch' and args[1] is the path
  * if there is more than one path, signal an error
  */
+#include <time.h>
+#include <sys/time.h>
 int sh_cd(char ** args)
 {
 	if (args[1] == NULL)
@@ -18,7 +20,15 @@ int sh_cd(char ** args)
  */
 double sh_etime(char **args)
 {
-    return 0.0;
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+
+    //do command
+    gettimeofday(&end, NULL);
+
+    int t = end.tv_usec - start.tv_usec;
+
+    return ((double)t / 100000);
 }
 
 
