@@ -335,11 +335,13 @@ void sh_loop()
         _print_args(exp_path_args);
 
         /* create command group and execute */
-        CommandGroup * cmd_grp = command_group_from_tokens(exp_path_args);
+        CommandGroup * cmd_grp = command_group_from_args(exp_path_args);
         command_group_print(cmd_grp);
+        printf("\n");
 
 
         /* cleanup */
+        command_group_free(cmd_grp);
         free(line); free(whitespaced_line); _free2d(args); _free2d(exp_env_args); _free2d(exp_path_args);
 
     } while(1);
