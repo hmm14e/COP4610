@@ -31,17 +31,25 @@ double sh_etime(char **args)
      */
     int i = 0;
     char ** args_cpy = strstr_copy(args + 1);
-    struct timeval start, end;
-    gettimeofday(&start, NULL);
+    struct timeval start, end, difference;
 
+    gettimeofday(&start, NULL);
     /* exec command */
     gettimeofday(&end, NULL);
 
-    int t = end.tv_usec - start.tv_usec;
+    /* calculate difference */
+
+    difference.tv_sec = end.tv_sec - start.tv_sec;
+    difference.tv_usec = end.tv_usec - start.tv_usec;    
+
+    if(differecne.tv_usec < 0){
+        difference.tv_sec--;
+        difference.tv_usec += 1000000;
+    }
 
     _free2d(args_cpy);
-    
-    return ((double)t / 100000);
+
+    return ((double)difference.tv_sec + ((double)difference.tv_usec/1000000.0));
 }
 
 
