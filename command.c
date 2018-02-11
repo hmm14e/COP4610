@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/wait.h>
 #include "command.h"
 
 /*
@@ -17,7 +20,7 @@ struct _Command {
 /*
  * The structure to hold an entire command entered on the shell. This strucutre accounts for
    pipes and redirects.
- * in_file, out_file will be set depending on the presence of redirections
+ * fin, fout will be set depending on the presence of redirections
  * background will be set whether or not the '&' appears
  * e.g. ls -al | grep foo > outfile < infile &
  */
@@ -25,9 +28,9 @@ struct _CommandGroup {
     size_t capacity;
     size_t num_commands;
     Command** commands;
-    char* in_file;
-    char* out_file;
-    char* err_file;
+    char* fin;
+    char* fout;
+    char* ferr;
     bool background;
 };
 
@@ -110,9 +113,9 @@ CommandGroup *command_group_from_args(char **args)
             /* '&'s only occur at beginning and end */
             cmd_grp->background = true;
         else if (i > 0 && strcmp(args[i - 1], "<") == 0)
-            cmd_grp->in_file = strdup(args[i]);
+            cmd_grp->fin = strdup(args[i]);
         else if (i > 0 && strcmp(args[i - 1], ">") == 0)
-            cmd_grp->out_file = strdup(args[i]);
+            cmd_grp->fout = strdup(args[i]);
         else
             command_append_arg(cur_cmd, args[i]);
     }
@@ -136,7 +139,66 @@ void command_group_append_command(CommandGroup *cmd_grp, Command *cmd)
  */
 void command_group_execute(CommandGroup *cmd_grp)
 {
+    /* save stdin and stdout for later restoration */
+    int tmp_stdin = dup(0), tmp_stdout = dup(1);
+    int fdin;
+    pid_t pid;
 
+    /* set initial input, handling input redireciton if present */
+    if (cmd_grp->fin)
+        fdin = open(cmd_grp->fin, O_RDONLY);
+    else
+        fdin = dup(tmp_stdin);
+
+    int ret, fdout;
+    /* execute the commands in the pipeline */
+    for (int i = 0; i < cmd_grp->num_commands; i++) {
+        /* redirect input */
+        dup2(fdin, 0);
+        close(fdin);
+
+        /* if last command, handle output redirection if present */
+        if (i == cmd_grp->num_commands - 1){
+            if (cmd_grp->fout)
+                fdout = open(cmd_grp->fout,  O_WRONLY|O_CREAT|O_TRUNC, 0666);
+            else
+                fdout = dup(tmp_stdout);
+        }
+        /* pipe otherwise */
+        else {
+            int fd[2];
+            pipe(fd);
+            fdout = fd[1];
+            fdin = fd[0];
+        }
+
+        /* redirect output */
+        dup2(fdout, 1);
+        close(fdout);
+
+        /* create child ps */
+        pid = fork();
+        if (pid == -1){
+            perror("failed to fork");
+            exit(1);
+        }
+        else if (pid == 0) {
+            /* exec never returns if successful */
+            setpgid(0, 0); /* set to new process group? */
+            execv(cmd_grp->commands[i]->args[0], cmd_grp->commands[i]->args);
+            perror("failed to execute child");
+            exit(1);
+        }
+    }
+
+    /* restore stdin, stdout */
+    dup2(tmp_stdin, 0);
+    dup2(tmp_stdout, 1);
+    close(tmp_stdin);
+    close(tmp_stdout);
+    int status;
+    if (!cmd_grp->background)
+        waitpid(pid, &status, 0);
 }
 
 
@@ -160,10 +222,10 @@ void command_group_print(CommandGroup* cmd_grp)
         if (i + 1 < cmd_grp->num_commands)
             printf(" | ");
     }
-    if (cmd_grp->in_file)
-        printf(" < %s", "in_file");
-    if (cmd_grp->out_file)
-        printf(" > %s", "out_file");
+    if (cmd_grp->fin)
+        printf(" < %s", cmd_grp->fin);
+    if (cmd_grp->fout)
+        printf(" > %s", cmd_grp->fout);
     if (cmd_grp->background)
         printf(" &");
 }

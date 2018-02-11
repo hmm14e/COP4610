@@ -295,7 +295,10 @@ char** sh_expand_paths(char** args)
 
 void sh_prompt()
 {
+    fflush(stdout);
     printf("%s@%s :: %s => ", getenv("USER"), getenv("MACHINE"), getenv("PWD"));
+
+    fflush(stdout);
 }
 
 
@@ -308,11 +311,8 @@ void sh_loop()
         line = sh_read_line();
 
         whitespaced_line = sh_add_whitespace(line, SH_SPECIAL_CHARS);
-        printf("after adding whitespace: %s\n", whitespaced_line);
 
         args = sh_parse_line(whitespaced_line);
-        printf("after parsing line: ");
-        _print_args(args);
 
         if (!_is_well_formed(args)) {
             free(line); free(whitespaced_line); _free2d(args);
@@ -321,8 +321,6 @@ void sh_loop()
 
         /* expand env variables */
         exp_env_args = sh_expand_env_vars(args);
-        printf("after expanding env vars: ");
-        _print_args(exp_env_args);
 
 
         /* expand commands to absolute paths */
@@ -331,14 +329,15 @@ void sh_loop()
             free(line); free(whitespaced_line); _free2d(args); _free2d(exp_env_args);
             continue;
         }
-         printf("after resolving paths: ");
-        _print_args(exp_path_args);
 
         /* create command group and execute */
         CommandGroup * cmd_grp = command_group_from_args(exp_path_args);
+        /* debug print */
+        printf("Executing ");
         command_group_print(cmd_grp);
         printf("\n");
-
+        /* actual execution */
+        command_group_execute(cmd_grp);
 
         /* cleanup */
         command_group_free(cmd_grp);
