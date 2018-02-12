@@ -148,8 +148,6 @@ int is_builtin_cmd(char *arg) {
 
 
 
-
-
 int sh_execute_builtin(char **args)
 {
     size_t num_builtins = sizeof(builtin_func_names) / sizeof(builtin_func_names[0]);

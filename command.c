@@ -177,7 +177,9 @@ void command_group_execute(CommandGroup *cmd_grp)
         /* redirect output */
         dup2(fdout, 1);
         close(fdout);
+
         if (is_builtin_cmd(cmd_grp->commands[i]->args[0])) {
+            /* call builtin, no forking */
             int ret = sh_execute_builtin(cmd_grp->commands[i]->args);
             if (!ret)
                 exit(0);
@@ -190,11 +192,16 @@ void command_group_execute(CommandGroup *cmd_grp)
                 exit(1);
             }
             else if (pid == 0) {
-                /* exec never returns if successful */
-                setpgid(0, 0);
+                /* put child in new ps group, to detatch its stdin from the fg shell */
+                if (i == 0)
+                    setpgid(0, 0);
                 execv(cmd_grp->commands[i]->args[0], cmd_grp->commands[i]->args);
+                /* exec never returns if successful */
                 perror("failed to execute child");
                 exit(1);
+            }
+            else {
+                printf("[proc %d]\n", pid);
             }
         }
 
@@ -217,7 +224,10 @@ void command_group_execute(CommandGroup *cmd_grp)
  */
 void command_group_free(CommandGroup *cmd_grp)
 {
-
+    for (int i = 0; i < cmd_grp->num_commands; i++)
+        command_free(cmd_grp->commands[i]);
+    free(cmd_grp->commands);
+    free(cmd_grp);
 }
 
 

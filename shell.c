@@ -320,11 +320,25 @@ void sh_prompt()
 }
 
 
+void sh_reap_zombies()
+{
+    int status;
+    pid_t pid;
+    while((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        printf("[proc %d exited with code %d]\n", pid, WEXITSTATUS(status));
+    }
+}
+
+
+
 void sh_loop()
 {
     char *line, *whitespaced_line;
     char **args, **exp_env_args, **exp_path_args;
+    pid_t pid = getpid();
     do {
+        /* */
+        sh_reap_zombies();
         sh_prompt();
         line = sh_read_line();
 

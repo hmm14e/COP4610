@@ -142,6 +142,10 @@ char **sh_expand_env_vars(char** args);
 char **sh_expand_paths(char** args);
 
 
+/**
+ * sh_reap_zombies - detect and print when child background processes temrinate
+ */
+void sh_reap_zombies();
 
 /**
  * sh_prompt - prompt user with '$USER@$MACHINE :: $PWD =>'
