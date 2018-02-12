@@ -6,6 +6,8 @@
 #include <errno.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "shell.h"
 #include "builtins.h"
 #include "command.h"
@@ -171,12 +173,13 @@ char **sh_expand_env_vars(char** args)
 
 
 /**
- * we define a command as an argument that is the first token OR is directly after a pipe '|'
+ * we define a command as an argument that is the first tokenm directly after a pipe '|', or after `etime` or `io`
  * return 0: arg, 1: cd 2: built-in command, 3: external command
  */
 int _is_command(char **args, int i)
 {
-    if (i != 0 && strcmp(args[i - 1], "|") != 0)
+    if (i != 0 && strcmp(args[i - 1], "|") != 0 &&
+        strcmp(args[i - 1], "etime") != 0 && strcmp(args[i - 1], "io") != 0)
         return 0;
     else if (strcmp(args[i], "cd") == 0)
         return 1;
@@ -213,6 +216,14 @@ char *_resolve_path(char* path) {
 }
 
 
+int _is_regular_file(const char *path)
+{
+    struct stat path_stat;
+    stat(path, &path_stat);
+    return S_ISREG(path_stat.st_mode);
+}
+
+
 /* searches $PATH for the first matching path and returns the full path*/
 char *_match_path(char *executable)
 {
@@ -225,7 +236,7 @@ char *_match_path(char *executable)
         char *filepath = str_combine(dir_slash, executable);
         free(dir_slash);
         /* X_OK checks for execute permission */
-        if (access(filepath, X_OK) != -1){
+        if (_is_regular_file(filepath) && access(filepath, X_OK) != -1){
             ret = filepath;
             break;
         }
@@ -237,7 +248,17 @@ char *_match_path(char *executable)
     return ret;
 }
 
-
+char *_expand_external_command(char *arg)
+{
+    char *expanded_path = NULL;
+    if (strchr(arg, '/'))
+        /* expand relative path */
+        expanded_path = _resolve_path(arg);
+    else
+        /* search the $PATH */
+        expanded_path = _match_path(arg);
+    return expanded_path;
+}
 
 
 /**
@@ -254,33 +275,38 @@ char** sh_expand_paths(char** args)
 
     int arg_type;
     for (int i = 0; expanded_args[i] != NULL; i++){
+        char *arg = expanded_args[i];
         if ((arg_type = _is_command(expanded_args, i))) {
-            char *arg = expanded_args[i];
             if (arg_type == 1){
                 /* cd, if arg appears after, must expand it */
             }
             else if (arg_type == 3) {
-                /* external command */
-                char *expanded_path;
-                if (strchr(arg, '/'))
-                    /* expand relative path */
-                    expanded_path = _resolve_path(arg);
-                else
-                    /* search the $PATH */
-                    expanded_path = _match_path(arg);
-
+                /* expand external commands */
+                /* built-ins `etime` and `io` also expect a external command as their first arg */
+                char *expanded_path = _expand_external_command(arg);
                 /* error out on broken path  */
                 if (!expanded_path) {
                     _free2d(expanded_args);
                     return NULL;
                 }
-                /* successful resolve */
+                /* successful expansion */
+                free(expanded_args[i]);
+                expanded_args[i] = expanded_path;
+            }
+        }
+        /* cd's first args (if present) needs to be expanded */
+        else if (i > 0 && (strcmp(args[i - 1], "cd"))) {
+            if (strchr(arg, '/')){
+                char *expanded_path = _resolve_path(arg);
+                if (!expanded_path) {
+                    _free2d(expanded_args);
+                    return NULL;
+                }
                 free(expanded_args[i]);
                 expanded_args[i] = expanded_path;
             }
         }
     }
-
     return expanded_args;
 }
 
@@ -324,7 +350,8 @@ void sh_loop()
 
         /* create command group and execute */
         CommandGroup * cmd_grp = command_group_from_args(exp_path_args);
-
+        command_group_print(cmd_grp);
+        printf("\n");
         /* actual execution */
         command_group_execute(cmd_grp);
 

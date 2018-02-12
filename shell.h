@@ -54,6 +54,11 @@ bool _is_path_variable(char* tok);
 bool _is_builtin_cmd(char *tok);
 
 
+/**
+ * _expand_external_command - resolves relative path or searches $PATH to get absolute path for external commands
+ * e.g. "python" -> "/usr/bin/python"
+ */
+char *_expand_external_command(char *arg);
 
 
 /**
@@ -65,6 +70,8 @@ bool _is_builtin_cmd(char *tok);
 int _is_command(char **args, int i);
 
 
+
+
 /**
  * _resolve_path - resolves all '.'s, '..s', and leading '~' in a path
  * @path: path to be resolved
@@ -72,6 +79,11 @@ int _is_command(char **args, int i);
  */
 char *_resolve_path(char *path);
 
+
+/**
+ * _is_regular_file - returns whether file is regular file, rather than directory file
+ */
+int _is_regular_file(const char *path);
 
 /**
  * _match_path - finds first matching directory in the $PATH that contains `executable`
