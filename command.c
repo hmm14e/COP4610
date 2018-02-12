@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include "command.h"
+#include "builtins.h"
 
 /*
  * The logical representaiton of a single command on the shell, without pipes and redirects.
@@ -33,6 +34,7 @@ struct _CommandGroup {
     char* ferr;
     bool background;
 };
+
 
 /*
  * Default constructor for Command, Will allocate the args array to an upperbound of 255 args
@@ -175,20 +177,27 @@ void command_group_execute(CommandGroup *cmd_grp)
         /* redirect output */
         dup2(fdout, 1);
         close(fdout);
+        if (is_builtin_cmd(cmd_grp->commands[i]->args[0])) {
+            int ret = sh_execute_builtin(cmd_grp->commands[i]->args);
+            if (!ret)
+                exit(0);
+        }
+        else {
+            /* create child ps */
+            pid = fork();
+            if (pid == -1){
+                perror("failed to fork");
+                exit(1);
+            }
+            else if (pid == 0) {
+                /* exec never returns if successful */
+                setpgid(0, 0);
+                execv(cmd_grp->commands[i]->args[0], cmd_grp->commands[i]->args);
+                perror("failed to execute child");
+                exit(1);
+            }
+        }
 
-        /* create child ps */
-        pid = fork();
-        if (pid == -1){
-            perror("failed to fork");
-            exit(1);
-        }
-        else if (pid == 0) {
-            /* exec never returns if successful */
-            setpgid(0, 0); /* set to new process group? */
-            execv(cmd_grp->commands[i]->args[0], cmd_grp->commands[i]->args);
-            perror("failed to execute child");
-            exit(1);
-        }
     }
 
     /* restore stdin, stdout */

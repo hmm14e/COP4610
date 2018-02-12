@@ -28,7 +28,6 @@ void command_free();
 
 typedef struct _CommandGroup CommandGroup;
 
-
 /**
  * command_group_create - Default constructor for CommandGroup
  */

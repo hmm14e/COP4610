@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <unistd.h>
 #include "shell.h"
+#include "builtins.h"
 #include "command.h"
 #include "utils.h"
 
@@ -29,10 +30,6 @@ void _print_args(char** args)
 char *sh_read_line()
 {
     char *buffer = calloc(SH_LINE_BUFFSIZE, sizeof(char));
-    if (!buffer) {
-        perror("Failed to allocate line buffer");
-        return 0;
-    }
     size_t ix = 0;
     char c;
     while(1) {
@@ -83,6 +80,10 @@ char **sh_parse_line(char *line)
 /* this function should only be called after `sh_add_whitespace`, assuring that '&', '|', '<', '>' are all alone */
 bool _is_well_formed(char **args)
 {
+    /* empty command is considered invalid */
+    if (!args[0])
+        return false;
+
     for (int i = 0; args[i] != NULL; i++) {
         /* can't have '&' anywhere but beginning and end */
         if (strcmp(args[i], "&") == 0)
@@ -169,15 +170,6 @@ char **sh_expand_env_vars(char** args)
 }
 
 
-bool _is_builtin(char *cmd) {
-    const char *builtins[] = {"echo", "etime", "exit", "io"};
-    for (int i = 0; i < 4; i++)
-        if (strcmp(cmd, builtins[i]) == 0)
-            return true;
-    return false;
-}
-
-
 /**
  * we define a command as an argument that is the first token OR is directly after a pipe '|'
  * return 0: arg, 1: cd 2: built-in command, 3: external command
@@ -188,7 +180,7 @@ int _is_command(char **args, int i)
         return 0;
     else if (strcmp(args[i], "cd") == 0)
         return 1;
-    else if (_is_builtin(args[i]))
+    else if (is_builtin_cmd(args[i]))
         return 2;
     else
         return 3;
@@ -332,10 +324,7 @@ void sh_loop()
 
         /* create command group and execute */
         CommandGroup * cmd_grp = command_group_from_args(exp_path_args);
-        /* debug print */
-        printf("Executing ");
-        command_group_print(cmd_grp);
-        printf("\n");
+
         /* actual execution */
         command_group_execute(cmd_grp);
 
