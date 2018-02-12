@@ -142,9 +142,8 @@ void command_group_append_command(CommandGroup *cmd_grp, Command *cmd)
 void command_group_execute(CommandGroup *cmd_grp)
 {
     /* save stdin and stdout for later restoration */
-    int tmp_stdin = dup(0), tmp_stdout = dup(1);
-    int fdin;
-    pid_t pid;
+    int ret, fdout, fdin, tmp_stdin = dup(0), tmp_stdout = dup(1);
+    pid_t pid, pipeline_pids[256];
 
     /* set initial input, handling input redireciton if present */
     if (cmd_grp->fin)
@@ -152,7 +151,6 @@ void command_group_execute(CommandGroup *cmd_grp)
     else
         fdin = dup(tmp_stdin);
 
-    int ret, fdout;
     /* execute the commands in the pipeline */
     for (int i = 0; i < cmd_grp->num_commands; i++) {
         /* redirect input */
@@ -193,7 +191,7 @@ void command_group_execute(CommandGroup *cmd_grp)
             }
             else if (pid == 0) {
                 /* put child in new ps group, to detatch its stdin from the fg shell */
-                if (i == 0)
+                if (i == 0 && cmd_grp->background)
                     setpgid(0, 0);
                 execv(cmd_grp->commands[i]->args[0], cmd_grp->commands[i]->args);
                 /* exec never returns if successful */
@@ -201,7 +199,8 @@ void command_group_execute(CommandGroup *cmd_grp)
                 exit(1);
             }
             else {
-                printf("[proc %d]\n", pid);
+                /* for bg processing, add pid to array for later printing out */
+                pipeline_pids[i] = pid;
             }
         }
 
@@ -215,6 +214,13 @@ void command_group_execute(CommandGroup *cmd_grp)
     int status;
     if (!cmd_grp->background)
         waitpid(pid, &status, 0);
+    else {
+        printf("[1] ");
+        for (int i = 0; i < cmd_grp->num_commands; i++)
+            printf("%i ", pipeline_pids[i]);
+        printf("\n");
+
+    }
 }
 
 
