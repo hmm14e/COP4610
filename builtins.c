@@ -37,13 +37,13 @@ int sh_etime(char **args)
 
     pid_t pid = fork();
     if (pid == -1) {
-        perror("failed to fork");
-        exit(1);
+        perror("sh: etime failed to fork");
+        return 1;
     }
     else if (pid == 0) {
         execv(args_cpy[0], args_cpy);
         perror("sh: etime exec failure");
-        exit(1);
+        return 1;
     }
     else {
         /* block waiting for child to execute */
@@ -72,9 +72,10 @@ int sh_etime(char **args)
  */
 int sh_exit(char **args)
 {
-    fprintf(stderr, "Exiting Shell....\n");
+    printf("Exiting Shell....\n");
     return 0;
 }
+
 
 int sh_echo(char **args)
 {
@@ -91,39 +92,47 @@ int sh_echo(char **args)
 
 int sh_io(char **args)
 {
-	char * start = "/proc/";
-	char * end = "/io";
 	char * filename;
     pid_t pid = fork();
-    if (pid == 0){
-        /*execute command */
+    /* ret will be 0 or 1, indicating whether we want the shell to keep running or not */
+    int ret;
+    /* create copy of args without the 'io' command */
+    char **args_cpy = strstr_copy(args + 1);
+    if (pid == -1) {
+        perror("sh: io failed to fork");
+        _free2d(args_cpy);
+        ret = 1;
     }
-
+    else if (pid == 0) {
+       execv(args_cpy[0], args_cpy);
+       perror("sh: io exec failure");
+       ret = 1;
+    }
     else{
-        /*wait for child process*/
         /*need to get data in /proc/pid/io*/
-        sprintf(filename, "%s%d%s", pre, pid, post);
+        sprintf(filename, "/proc/%d/io", pid);
         char line[256];
- 		FILE * infile;
+        FILE * infile;
   		infile = fopen(filename, "r");
   		char ** lines;
 
     	while (fgets(line, sizeof(line), infile)) {
-         	lines = str_split(line, ":"); 
+         	lines = str_split(line, ":");
          	printf("%s:", lines[0]);
          	int MAX = 35;
          	int len = strlen(lines[1]) + strlen(lines[0]);
          	for (int i = 1; i < MAX-len; i++){
           	printf(" ");
+            _free2d(lines);
          }
-
          printf("%s", lines[1]);
-    	}	
-
+    	}
     	printf("\n");
         waitpid(pid, NULL, 0);
+        ret = 1;
     }
-    return 1;
+    _free2d(args_cpy);
+    return ret;
 }
 
 
