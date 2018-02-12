@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include "shell.h"
 #include "builtins.h"
 #include "command.h"
@@ -161,8 +162,11 @@ char **sh_expand_env_vars(char** args)
             char *expanded;
             if (env_var_val)
                 expanded = str_replace(arg, env_var, env_var_val);
-            else
-                expanded = str_replace(arg, env_var, "");
+            else {
+                fprintf(stderr, "sh: %s not found\n", env_var);
+                _free2d(expanded_args);
+                return NULL;
+            }
             /* update to expanded arg */
             free(expanded_args[i]);
             expanded_args[i] = expanded;
@@ -313,14 +317,11 @@ char** sh_expand_paths(char** args)
 
 void sh_prompt()
 {
-    fflush(stdout);
     printf("%s@%s :: %s => ", getenv("USER"), getenv("MACHINE"), getenv("PWD"));
-
-    fflush(stdout);
 }
 
 
-void sh_reap_zombies()
+void sh_reap_zombies(CommandGroup** execution_queue)
 {
     int status;
     pid_t pid;
@@ -329,16 +330,31 @@ void sh_reap_zombies()
     }
 }
 
+/*
+void eq_remove_pid(CommandGroup** execution_queue, pid_t pid)
+{
+    size_t qsize = sizeof(command_group_execute) / sizeof(execution_queue[0]);
+    for (int i = 0; i < qsize; i++) {
+        command_group_remove_pid(execution_queue[i], pid);
+        if (cmd_grp->done_executing) {
+            printf("[%i]+ ");
+            command_group_print(cmd_grp);
+        }
+    }
+}
+*/
+
 
 
 void sh_loop()
 {
     char *line, *whitespaced_line;
     char **args, **exp_env_args, **exp_path_args;
+    CommandGroup *execution_queue[256];
     pid_t pid = getpid();
     do {
         /* */
-        sh_reap_zombies();
+        sh_reap_zombies(execution_queue);
         sh_prompt();
         line = sh_read_line();
 
@@ -353,7 +369,10 @@ void sh_loop()
 
         /* expand env variables */
         exp_env_args = sh_expand_env_vars(args);
-
+        if (!exp_env_args) {
+            free(line); free(whitespaced_line); _free2d(args);
+            continue;
+        }
 
         /* expand commands to absolute paths */
         exp_path_args = sh_expand_paths(exp_env_args);
@@ -368,7 +387,6 @@ void sh_loop()
         printf("\n");
         /* actual execution */
         command_group_execute(cmd_grp);
-
         /* cleanup */
         command_group_free(cmd_grp);
         free(line); free(whitespaced_line); _free2d(args); _free2d(exp_env_args); _free2d(exp_path_args);
@@ -381,7 +399,6 @@ void sh_loop()
 int main(int argc, char **argv)
 {
     sh_loop();
-
     return 0;
 }
 

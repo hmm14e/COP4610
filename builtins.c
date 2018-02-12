@@ -3,6 +3,7 @@
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include "utils.h"
 
@@ -154,7 +155,6 @@ int is_builtin_cmd(char *arg) {
     }
     return 0;
 }
-
 
 
 int sh_execute_builtin(char **args)
