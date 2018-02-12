@@ -111,24 +111,31 @@ int sh_io(char **args)
        ret = 1;
     }
     else{
-        /*need to get data in /proc/pid/io*/
+        /* need to get data in /proc/pid/io */
         sprintf(filename, "/proc/%d/io", pid);
         char line[256];
         FILE * infile;
   		infile = fopen(filename, "r");
   		char ** lines;
 
+        /* grab file line by line */
     	while (fgets(line, sizeof(line), infile)) {
-         	lines = str_split(line, ":");
+         	
+            /* split the line by the colon */
+            lines = str_split(line, ":");
          	printf("%s:", lines[0]);
+
+            /* get correct len so the table is formatted corectly */
          	int MAX = 35;
          	int len = strlen(lines[1]) + strlen(lines[0]);
+
          	for (int i = 1; i < MAX-len; i++){
-          	printf(" ");
+                printf(" "); 
+            }
+            printf("%s", lines[1]);
             _free2d(lines);
-         }
-         printf("%s", lines[1]);
     	}
+
     	printf("\n");
         waitpid(pid, NULL, 0);
         ret = 1;
