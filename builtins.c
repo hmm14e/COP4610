@@ -91,6 +91,9 @@ int sh_echo(char **args)
 
 int sh_io(char **args)
 {
+	char * start = "/proc/";
+	char * end = "/io";
+	char * filename;
     pid_t pid = fork();
     if (pid == 0){
         /*execute command */
@@ -99,6 +102,25 @@ int sh_io(char **args)
     else{
         /*wait for child process*/
         /*need to get data in /proc/pid/io*/
+        sprintf(filename, "%s%d%s", pre, pid, post);
+        char line[256];
+ 		FILE * infile;
+  		infile = fopen(filename, "r");
+  		char ** lines;
+
+    	while (fgets(line, sizeof(line), infile)) {
+         	lines = str_split(line, ":"); 
+         	printf("%s:", lines[0]);
+         	int MAX = 35;
+         	int len = strlen(lines[1]) + strlen(lines[0]);
+         	for (int i = 1; i < MAX-len; i++){
+          	printf(" ");
+         }
+
+         printf("%s", lines[1]);
+    	}	
+
+    	printf("\n");
         waitpid(pid, NULL, 0);
     }
     return 1;
