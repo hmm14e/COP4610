@@ -43,3 +43,7 @@ processing, and a series of built in functions as specified below. The shell sho
        
        read line -> add spaces between special chars -> expand env vars -> resolve paths -> execute
 - For more details on the functions, check out the header files
+---------------------------------------------------------
+## Extra Credit
+- The first part of the extra credit is implemented. 
+- It supports multiple pipes, input redirection, and output redirection all within a single call.
