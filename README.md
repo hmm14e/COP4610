@@ -30,8 +30,16 @@ processing, and a series of built in functions as specified below. The shell sho
 - **shell**: defines the functions that prompt, parse, and expand command line arguments
 
 ---------------------------------------------------------
-## Usage notes:
+## Usage Notes:
 - With regards to background processing, printing the background proceses stdout leads to messy output.
 - Zombie PIDs are reaped right before prompting the user, so to get updates just press enter a bunch of times.
 
 ---------------------------------------------------------
+## Implementation Notes
+- The main execution loop is in shell::sh_loop, here is where prompting, expanding, and "execution" is done
+- The handling of pipelining and redirection is in command::command_group_execute
+- Most functions in utils.c return calloc'd memory, so the caller must free them
+- The parsing pipeline is roughly
+       
+       read line -> add spaces between special chars -> expand env vars -> resolve paths -> execute
+- For more details on the functions, check out the header files
