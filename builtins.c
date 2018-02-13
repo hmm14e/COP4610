@@ -132,7 +132,7 @@ int sh_io(char **args)
     	while (fgets(line, sizeof(line), infile)) {
             lines = str_split(line, ":");
             if (!lines) {
-                frprintf(stderr, "sh_io error");
+                fprintf(stderr, "sh_io error");
                 return 1;
             }
             /* add ':'' after the property */
