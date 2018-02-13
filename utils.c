@@ -14,18 +14,22 @@ void _free2d(char **arr)
 
 char *str_tok(char * str, const char * delim)
 {
-    static char* p=0;
-    if(str)
-        p=str;
-    else if(!p)
-        return 0;
-    str=p+strspn(p,delim);
-    p=str+strcspn(str,delim);
-    if(p==str)
-        return p=0;
-    p = *p ? *p=0,p+1 : 0;
-    return str;
+    static char *saves;
+    register int ch;
+
+    if (s == 0)
+        s = saves;
+    do {
+        if ((ch = *s++) == '\0')
+            return 0;
+    } while (strchr(delim, ch));
+    --s;
+    saves = s + strcspn(s, delim);
+    if (*saves != 0)
+        *saves++ = 0;
+    return s;
 }
+
 
 /* split the str by delims into tokens */
 char **str_split(char *str, const char *delims)
