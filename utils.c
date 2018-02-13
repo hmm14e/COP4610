@@ -12,21 +12,26 @@ void _free2d(char **arr)
 }
 
 
-char *str_tok(char * str, const char * delim)
+char *str_tok(char * s, const char * delim)
 {
     static char *saves;
     register int ch;
 
-    if (s == 0)
+    if (!s)
         s = saves;
     do {
-        if ((ch = *s++) == '\0')
-            return 0;
+      ch = *s;
+      s++;
+        if (ch == '\0'){
+         return 0;
+        }
     } while (strchr(delim, ch));
-    --s;
+    s--;
     saves = s + strcspn(s, delim);
-    if (*saves != 0)
-        *saves++ = 0;
+    if (*saves != 0){
+       *saves = 0;
+       saves++;
+    }
     return s;
 }
 
@@ -103,7 +108,7 @@ char *str_replace(char *orig, char *rep, char *with)
         ins = tmp + len_rep;
 
     // malloc space with the proper replaced str size
-    tmp = result = calloc(strlen(orig) + (len_with - len_rep) * count + 1);
+    tmp = result = calloc(strlen(orig) + (len_with - len_rep) * count + 1, sizeof(char));
 
     if (!result)
         return NULL;
