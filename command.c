@@ -5,35 +5,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <sys/types.h>
 #include "command.h"
 #include "builtins.h"
-
-/*
- * The logical representaiton of a single command on the shell, without pipes and redirects.
- * e.g. ls - al
- */
-struct _Command {
-    size_t capacity;
-    size_t num_args;
-    char** args;
-};
-
-/*
- * The structure to hold an entire command entered on the shell. This strucutre accounts for
-   pipes and redirects.
- * fin, fout will be set depending on the presence of redirections
- * background will be set whether or not the '&' appears
- * e.g. ls -al | grep foo > outfile < infile &
- */
-struct _CommandGroup {
-    size_t capacity;
-    size_t num_commands;
-    Command** commands;
-    char* fin;
-    char* fout;
-    char* ferr;
-    bool background;
-};
 
 
 /*
@@ -62,9 +36,8 @@ void command_append_arg(Command *cmd, char *arg)
 {
     if (cmd->num_args >= cmd->capacity)
         return;
-    char *copy = calloc(strlen(arg) + 1, sizeof(char));
-    cmd->args[cmd->num_args] = strcpy(copy, arg);
-    cmd->num_args++;
+    char *copy = strdup(arg);
+    cmd->args[cmd->num_args++] = copy;
 }
 
 
@@ -92,6 +65,8 @@ CommandGroup *command_group_create()
 {
     CommandGroup *cmd_grp = calloc(1, sizeof(CommandGroup));
     cmd_grp->commands = calloc(255 + 1, sizeof(Command*));
+    cmd_grp->unreaped_pids = calloc(255 + 1, sizeof(pid_t*));
+    cmd_grp->num_unreaped_pids = 0;
     cmd_grp->capacity = 255;
     cmd_grp->num_commands = 0;
     return cmd_grp;
@@ -143,7 +118,7 @@ void command_group_execute(CommandGroup *cmd_grp)
 {
     /* save stdin and stdout for later restoration */
     int ret, fdout, fdin, tmp_stdin = dup(0), tmp_stdout = dup(1);
-    pid_t pid, pipeline_pids[256];
+    pid_t pid;
 
     /* set initial input, handling input redireciton if present */
     if (cmd_grp->fin)
@@ -200,7 +175,7 @@ void command_group_execute(CommandGroup *cmd_grp)
             }
             else {
                 /* for bg processing, add pid to array for later printing out */
-                pipeline_pids[i] = pid;
+                cmd_grp->unreaped_pids[cmd_grp->num_unreaped_pids++] = pid;
             }
         }
 
@@ -214,13 +189,6 @@ void command_group_execute(CommandGroup *cmd_grp)
     int status;
     if (!cmd_grp->background)
         waitpid(pid, &status, 0);
-    else {
-        printf("[1] ");
-        for (int i = 0; i < cmd_grp->num_commands; i++)
-            printf("%i ", pipeline_pids[i]);
-        printf("\n");
-
-    }
 }
 
 
@@ -233,6 +201,7 @@ void command_group_free(CommandGroup *cmd_grp)
     for (int i = 0; i < cmd_grp->num_commands; i++)
         command_free(cmd_grp->commands[i]);
     free(cmd_grp->commands);
+    free(cmd_grp->unreaped_pids);
     free(cmd_grp);
 }
 
@@ -255,3 +224,20 @@ void command_group_print(CommandGroup* cmd_grp)
         printf(" &");
 }
 
+
+void command_group_reap_pid(CommandGroup* cmd_grp, pid_t pid)
+{
+    for (int i = 0; i < cmd_grp->num_unreaped_pids; i++) {
+        if (cmd_grp->unreaped_pids[i] == pid) {
+            cmd_grp->unreaped_pids[i] = 0;
+            /* shift everything after left to fill vacant spot */
+            for (int j = i + 1; j < cmd_grp->num_unreaped_pids; j++) {
+                cmd_grp->unreaped_pids[j - 1] = cmd_grp->unreaped_pids[j];
+                cmd_grp->unreaped_pids[j] = 0;
+            }
+            cmd_grp->num_unreaped_pids--;
+            break;
+        }
+    }
+
+}

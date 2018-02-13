@@ -1,3 +1,4 @@
+#include "command.h"
 /**
  * Functions responsible for controlling the event loop of the shell, involving prompting, parsing, and executing
  */
@@ -143,9 +144,23 @@ char **sh_expand_paths(char** args);
 
 
 /**
- * sh_reap_zombies - detect and print when child background processes temrinate
+ *
  */
-void sh_reap_zombies();
+size_t eq_current_size(CommandGroup** bg_cmd_grp_queue);
+
+
+/* remove the cmd_grp at position i, and shift every cmd_grp after it left */
+void eq_remove_and_free(CommandGroup** bg_cmd_grp_queue, int i);
+
+
+void eq_append(CommandGroup** bg_cmd_grp_queue, CommandGroup* cmd_grp);
+
+
+/* loop throught the entire queue, removing the pid from */
+void eq_remove_pid(CommandGroup** bg_cmd_grp_queue, pid_t pid);
+
+
+void sh_reap_zombies(CommandGroup** bg_cmd_grp_queue);
 
 /**
  * sh_prompt - prompt user with '$USER@$MACHINE :: $PWD =>'

@@ -11,7 +11,6 @@
 #include <sys/wait.h>
 #include "shell.h"
 #include "builtins.h"
-#include "command.h"
 #include "utils.h"
 
 
@@ -299,7 +298,7 @@ char** sh_expand_paths(char** args)
             }
         }
         /* cd's first args (if present) needs to be expanded */
-        else if (i > 0 && (strcmp(args[i - 1], "cd"))) {
+        else if (i > 0 && strcmp(args[i - 1], "cd")) {
             if (strchr(arg, '/')){
                 char *expanded_path = _resolve_path(arg);
                 if (!expanded_path) {
@@ -317,44 +316,99 @@ char** sh_expand_paths(char** args)
 
 void sh_prompt()
 {
+    fflush(stdout);
     printf("%s@%s :: %s => ", getenv("USER"), getenv("MACHINE"), getenv("PWD"));
+    fflush(stdout);
 }
 
 
-void sh_reap_zombies(CommandGroup** execution_queue)
+size_t eq_current_size(CommandGroup** bg_cmd_grp_queue)
+{
+    size_t cur_size = 0;
+    while (bg_cmd_grp_queue[cur_size] != NULL){
+        cur_size++;
+    }
+    return cur_size;
+}
+
+
+/* remove the cmd_grp at position i, and shift every cmd_grp after it left */
+void eq_remove_and_free(CommandGroup** bg_cmd_grp_queue, int i)
+{
+    size_t cur_size = eq_current_size(bg_cmd_grp_queue);
+    if (i >= cur_size) {
+        fprintf(stderr, "invalid eq_remove at pos: %i with cur_size: %zu\n", i, cur_size);
+        return;
+    }
+    if (i < 0 || !bg_cmd_grp_queue[i])
+        return;
+    command_group_free(bg_cmd_grp_queue[i]);
+    bg_cmd_grp_queue[i] = NULL;
+    /* shift left */
+    for (int j = i + 1; j < cur_size; j++) {
+        bg_cmd_grp_queue[j - 1] = bg_cmd_grp_queue[j];
+        bg_cmd_grp_queue[j] = NULL; /* mark end */
+    }
+}
+
+
+void eq_append(CommandGroup** bg_cmd_grp_queue, CommandGroup* cmd_grp)
+{
+    size_t cur_size = eq_current_size(bg_cmd_grp_queue);
+    if (cur_size > 255) {
+        fprintf(stderr, "command group full!\n");
+        return;
+    }
+    /* print the position in the execution queue  and the pids*/
+    printf("[%zu] ", cur_size + 1);
+    for (int i = 0; i < cmd_grp->num_unreaped_pids; i++)
+        printf("%i ", cmd_grp->unreaped_pids[i]);
+    printf("\n");
+
+    bg_cmd_grp_queue[cur_size] = cmd_grp;
+}
+
+
+/* loop throught the entire queue, removing the pid from */
+void eq_remove_pid(CommandGroup** bg_cmd_grp_queue, pid_t pid)
+{
+    size_t qsize = eq_current_size(bg_cmd_grp_queue);
+    CommandGroup *cmd_grp;
+    for (int i = 0; i < qsize; i++) {
+        cmd_grp = bg_cmd_grp_queue[i];
+        /* only removes if cmd_grp owns the pid */
+        command_group_reap_pid(cmd_grp, pid);
+        if (cmd_grp->num_unreaped_pids == 0) {
+            printf("[%d]+ ", i + 1);
+            command_group_print(cmd_grp);
+            printf("\n");
+            /* shift the entire queue due to removal, and free the cmd_grp */
+            eq_remove_and_free(bg_cmd_grp_queue, i);
+        }
+    }
+}
+
+
+void sh_reap_zombies(CommandGroup** bg_cmd_grp_queue)
 {
     int status;
     pid_t pid;
     while((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        printf("[proc %d exited with code %d]\n", pid, WEXITSTATUS(status));
+        eq_remove_pid(bg_cmd_grp_queue, pid);
     }
 }
-
-/*
-void eq_remove_pid(CommandGroup** execution_queue, pid_t pid)
-{
-    size_t qsize = sizeof(command_group_execute) / sizeof(execution_queue[0]);
-    for (int i = 0; i < qsize; i++) {
-        command_group_remove_pid(execution_queue[i], pid);
-        if (cmd_grp->done_executing) {
-            printf("[%i]+ ");
-            command_group_print(cmd_grp);
-        }
-    }
-}
-*/
-
 
 
 void sh_loop()
 {
     char *line, *whitespaced_line;
     char **args, **exp_env_args, **exp_path_args;
-    CommandGroup *execution_queue[256];
+    CommandGroup **bg_cmd_grp_queue = calloc(256, sizeof(CommandGroup*));
+
     pid_t pid = getpid();
     do {
         /* */
-        sh_reap_zombies(execution_queue);
+        sh_reap_zombies(bg_cmd_grp_queue);
         sh_prompt();
         line = sh_read_line();
 
@@ -387,11 +441,19 @@ void sh_loop()
         printf("\n");
         /* actual execution */
         command_group_execute(cmd_grp);
+        /* background cmd_grp's get free'd when all their child pids are reaped */
+        if (cmd_grp->background){
+
+            eq_append(bg_cmd_grp_queue, cmd_grp);
+        }
+        else
+            command_group_free(cmd_grp);
         /* cleanup */
-        command_group_free(cmd_grp);
-        free(line); free(whitespaced_line); _free2d(args); _free2d(exp_env_args); _free2d(exp_path_args);
+        free(line); free(whitespaced_line); _free2d(args);
+        _free2d(exp_env_args); _free2d(exp_path_args);
 
     } while(1);
+    free(bg_cmd_grp_queue);
 }
 
 

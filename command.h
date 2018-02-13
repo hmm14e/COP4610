@@ -1,10 +1,20 @@
+#include <sys/types.h>
+
 /**
  ************************************************************************************
  **************************** Interface for Command *********************************
  ************************************************************************************
  */
 
-typedef struct _Command Command;
+/*
+ * The logical representaiton of a single command on the shell, without pipes and redirects.
+ * e.g. ls - al
+ */
+typedef struct {
+    size_t capacity;
+    size_t num_args;
+    char** args;
+} Command;
 
 
 Command *command_create();
@@ -26,7 +36,24 @@ void command_free();
  ************************************************************************************
  */
 
-typedef struct _CommandGroup CommandGroup;
+/*
+ * The structure to hold an entire command entered on the shell. This strucutre accounts for
+   pipes and redirects.
+ * fin, fout will be set depending on the presence of redirections
+ * background will be set whether or not the '&' appears
+ * e.g. ls -al | grep foo > outfile < infile &
+ */
+typedef struct {
+    size_t capacity;
+    size_t num_commands;
+    Command** commands;
+    size_t num_unreaped_pids;
+    pid_t* unreaped_pids; /* for tracking background processes */
+    char* fin;
+    char* fout;
+    char* ferr;
+    bool background;
+} CommandGroup;
 
 /**
  * command_group_create - Default constructor for CommandGroup
@@ -64,3 +91,9 @@ void command_group_free(CommandGroup *cmd_grp);
  * command_group_print - pretty print the CommandGroup
  */
 void command_group_print(CommandGroup *cmd_grp);
+
+
+/**
+ * command_group_reap_pid - remove a pid from the `unpead_pids` array
+ */
+void command_group_reap_pid(CommandGroup *cmd_grp, pid_t pid);
