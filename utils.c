@@ -84,49 +84,41 @@ char** strstr_copy(char** src)
 }
 
 
-char *str_replace(char *orig, char *rep, char *with)
+char *str_replace(char *first, char *new, char *with)
 {
-    char *result; // the return string
-    char *ins;    // the next insert point
-    char *tmp;    // varies
-    int len_rep;  // length of rep (the string to remove)
-    int len_with; // length of with (the string to replace rep with)
-    int len_front; // distance between rep and end of last rep
-    int count;    // number of replacements
+    char *finish;
+    char *here;
+    char *test;
+    int distance;
+    int replace;
+    int new_and_last;
+    int number;
 
-    // sanity checks and initialization
-    if (!orig || !rep || !with)
+    if (!with || !first || !new)
         return NULL;
-    len_rep = strlen(rep);
-    if (len_rep == 0)
-        return NULL; // empty rep causes infinite loop during count
-    len_with = strlen(with);
+    distance = strlen(new);
+    if (distance == 0)
+        return NULL;
+    replace = strlen(with);
 
-    // count the number of replacements needed
-    ins = orig;
-    for (count = 0; (tmp = strstr(ins, rep)); ++count)
-        ins = tmp + len_rep;
+    here = first;
+    for (number = 0; (test = strstr(here, new)); ++number)
+        here = test + distance;
 
-    // malloc space with the proper replaced str size
-    tmp = result = calloc(strlen(orig) + (len_with - len_rep) * count + 1, sizeof(char));
+    test = finish = calloc(strlen(first) + (replace - distance) * number + 1, sizeof(char));
 
-    if (!result)
+    if (!finish)
         return NULL;
 
-    // first time through the loop, all the variable are set correctly
-    // from here on,
-    //    tmp points to the end of the result string
-    //    ins points to the next occurrence of rep in orig
-    //    orig points to the remainder of orig after "end of rep"
-    while (count--) {
-        ins = strstr(orig, rep);
-        len_front = ins - orig;
-        tmp = strncpy(tmp, orig, len_front) + len_front;
-        tmp = strcpy(tmp, with) + len_with;
-        orig += len_front + len_rep; // move to next "end of rep"
+    while (number--) {
+        here = strstr(first, new);
+        new_and_last = here - first;
+        test = strncpy(test, first, new_and_last) + new_and_last;
+        test = strcpy(test, with) + replace;
+        first += new_and_last + distance;
     }
-    strcpy(tmp, orig);
-    return result;
+    strcpy(test, first);
+    return finish;
 }
 
 
