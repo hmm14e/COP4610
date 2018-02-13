@@ -122,26 +122,25 @@ int sh_io(char **args)
         char line[256];
         FILE * infile;
   		infile = fopen(filename, "r");
-  		char ** lines;
-
+        if (!infile) {
+            perror("sh_io failed to open proc file");
+            _free2d(args_cpy);
+            return 1;
+        }
+  		char *prop_colon, ** lines;
         /* grab file line by line */
     	while (fgets(line, sizeof(line), infile)) {
-
-            /* split the line by the colon */
             lines = str_split(line, ":");
-         	printf("%s:", lines[0]);
-
-            /* get correct len so the table is formatted corectly */
-         	int MAX = 35;
-         	int len = strlen(lines[1]) + strlen(lines[0]);
-
-         	for (int i = 1; i < MAX-len; i++){
-                printf(" ");
+            if (!lines) {
+                frprintf(stderr, "sh_io error");
+                return 1;
             }
-            printf("%s", lines[1]);
+            /* add ':'' after the property */
+            prop_colon = str_combine(lines[0], ":");
+         	printf("%-25s: %s", prop_colon, lines[1]);
+            free(prop_colon);
             _free2d(lines);
     	}
-
     	printf("\n");
         waitpid(pid, NULL, 0);
         ret = 1;
