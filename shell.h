@@ -144,23 +144,36 @@ char **sh_expand_paths(char** args);
 
 
 /**
- *
+ * eq_current_size - returns the number of CommandGroups in the execution queue
  */
 size_t eq_current_size(CommandGroup** bg_cmd_grp_queue);
 
 
-/* remove the cmd_grp at position i, and shift every cmd_grp after it left */
+/**
+ * eq_remove_and_free - remove the cmd_grp at position i, and shift every cmd_grp after it left
+ */
 void eq_remove_and_free(CommandGroup** bg_cmd_grp_queue, int i);
 
 
+/**
+ * eq_append - append CommandGroup to the queue
+ */
 void eq_append(CommandGroup** bg_cmd_grp_queue, CommandGroup* cmd_grp);
 
 
-/* loop throught the entire queue, removing the pid from */
+/**
+ * eq_remove_pid - find the CommandGroup in the queue that owns the pid and removes it from there
+ * NOTE: this funciton will free the CommandGroup if it no longer owns any pids
+ */
 void eq_remove_pid(CommandGroup** bg_cmd_grp_queue, pid_t pid);
 
 
+/**
+ * sh_reap_zombies - get all terminated background child process pids, reap them, and print out indicating they finished
+ * @bg_cmd_grp_queue: the queue of all current cmd_grps who still have unreaped pids
+ */
 void sh_reap_zombies(CommandGroup** bg_cmd_grp_queue);
+
 
 /**
  * sh_prompt - prompt user with '$USER@$MACHINE :: $PWD =>'
