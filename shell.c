@@ -280,7 +280,6 @@ char** sh_expand_paths(char** args)
     for (int i = 0; expanded_args[i] != NULL; i++){
         char *arg = expanded_args[i];
         if ((arg_type = _is_command(expanded_args, i)) > 0) {
-            printf("is_command %s\n", args[i]);
             if (arg_type == 1){
                 /* cd, if arg appears after, must expand it */
             }
@@ -300,7 +299,6 @@ char** sh_expand_paths(char** args)
         }
         /* cd's first args (if present) needs to be expanded */
         else if (i > 0 && strcmp(args[i - 1], "cd") == 0) {
-            printf("ON CD EPAND %s\n", args[i]);
             if (strchr(arg, '/') || strchr(arg, '~') || strchr(arg, '.')){
                 char *expanded_path = _resolve_path(arg);
                 if (!expanded_path) {
@@ -310,9 +308,6 @@ char** sh_expand_paths(char** args)
                 free(expanded_args[i]);
                 expanded_args[i] = expanded_path;
             }
-        }
-        else {
-            printf("else %s %s\n", args[i-1], args[i]);
         }
     }
     return expanded_args;
