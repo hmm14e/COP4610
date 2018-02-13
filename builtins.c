@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <ctype.h>
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
@@ -130,6 +131,8 @@ int sh_io(char **args)
   		char *prop_colon, ** lines;
         /* grab file line by line */
     	while (fgets(line, sizeof(line), infile)) {
+            if (!isalpha(line[0]))
+                continue;
             lines = str_split(line, ":");
             if (!lines) {
                 fprintf(stderr, "sh_io error");
