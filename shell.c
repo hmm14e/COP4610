@@ -437,8 +437,6 @@ void sh_loop()
 
         /* create command group and execute */
         CommandGroup * cmd_grp = command_group_from_args(exp_path_args);
-        command_group_print(cmd_grp);
-        printf("\n");
         /* actual execution */
         command_group_execute(cmd_grp);
         /* background cmd_grp's get free'd when all their child pids are reaped */
