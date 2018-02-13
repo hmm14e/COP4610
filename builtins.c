@@ -16,13 +16,19 @@ char *builtin_func_names[] = {"cd", "echo", "etime", "exit", "io"};
  */
 int sh_cd(char ** args)
 {
+    int ret;
+
     if (args[1] == NULL)
-        chdir(getenv("HOME"));
-    /* more than 1 arg */
-    else if (args[2] != NULL)
-        fprintf(stderr, "sh: more than one arg supplied to cd\n");
+        ret = chdir(getenv("HOME"));
     else
-        chdir(args[1]);
+        ret = chdir(args[1]);
+    if (ret < 0)
+        perror("chdir error: ");
+    char cwd[4096];
+    if (getcwd(cwd, sizeof(cwd)) != NULL)
+        setenv("PWD", cwd, 1);
+    else
+        perror("getcwd() error");
     return 1;
 }
 
@@ -120,7 +126,7 @@ int sh_io(char **args)
 
         /* grab file line by line */
     	while (fgets(line, sizeof(line), infile)) {
-         	
+
             /* split the line by the colon */
             lines = str_split(line, ":");
          	printf("%s:", lines[0]);
@@ -130,7 +136,7 @@ int sh_io(char **args)
          	int len = strlen(lines[1]) + strlen(lines[0]);
 
          	for (int i = 1; i < MAX-len; i++){
-                printf(" "); 
+                printf(" ");
             }
             printf("%s", lines[1]);
             _free2d(lines);
