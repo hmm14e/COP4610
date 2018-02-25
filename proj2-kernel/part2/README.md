@@ -8,12 +8,19 @@ On each read you will use the proc interface to both print the current time as w
 Example usage:
 
 ```
-$ cat /proc/timedcurrent time: 1518647111.760933999
+$ cat /proc/timed
+current time: 1518647111.760933999
 $ sleep 1
-$ cat /proc/timedcurrent time: 1518647112.768429998elapsed time: 1.007495999
+$ cat /proc/timed
+current time: 1518647112.768429998
+elapsed time: 1.007495999
 
 $ sleep 3
-$ cat /proc/timedcurrent time: 1518647115.774925999elapsed time: 3.006496001
+$ cat /proc/timed
+current time: 1518647115.774925999
+elapsed time: 3.006496001
 $ sleep 5
-$ cat /proc/timedcurrent time: 1518647120.780421999elapsed time: 5.005496000
+$ cat /proc/timed
+current time: 1518647120.780421999
+elapsed time: 5.005496000
 ```
