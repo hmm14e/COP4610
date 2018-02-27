@@ -3,7 +3,7 @@
 #include <linux/module.h>
 #include <linux/linkage.h>
 
-MODULE_LICENSE("GPL")
+MODULE_LICENSE("GPL");
 
 /* STUB pointers (were exported in the wrappers) that "register" the sys call functions */
 extern long (*STUB_start_elevator) (void);
@@ -34,7 +34,7 @@ static void register_syscalls(void)
 {
     STUB_start_elevator = start_elevator;
     STUB_issue_request = issue_request;
-    STUB_issue_request = stop_elevator;
+    STUB_stop_elevator = stop_elevator;
 }
 
 
