@@ -51,7 +51,7 @@ You will also need to print the following for each floor of the building:
 * The total number of passengers that have been serviced
 
 
-### Step 3: /Proc
+### Step 4: Test
 Once
 Once  you've implemented your system calls, you must interact with two provided user-space applications that will allow communication with your kernel module.
 **producer.c**
