@@ -75,19 +75,18 @@ typedef struct {
 /* global variable that holds the array of `Floor`s */
 Floor **floors;
 
+/* initalizes `Floor` struct with everything zero'd out */
 Floor *floor_create(int floor_num)
 {
     Floor *floor = kcalloc(1, sizeof(Floor), GFP_KERNEL);
     if (!floor)
         return NULL;
     INIT_LIST_HEAD(&floor->queue);
-    floor->passengers_served = 0;
     floor->floor_num = floor_num;
-    floor->load_in_weight = 0.0;
-    floor->load_in_units = 0.0;
     return floor;
 }
 
+/* deep free of the floors struct */
 void floor_free(Floor* floor)
 {
     /* clear the floor queue and free the struct */
@@ -104,7 +103,7 @@ void floor_free(Floor* floor)
     kfree(floor);
 }
 
-
+/* dyanically allocate space for the global array holding all the floors */
 Floor** create_floors_array(int num_floors)
 {
     int i;
@@ -117,6 +116,7 @@ Floor** create_floors_array(int num_floors)
     return floors;
 }
 
+
 void free_floors_array(Floor** floors, int num_floors)
 {
     int i;
@@ -126,6 +126,9 @@ void free_floors_array(Floor** floors, int num_floors)
     kfree(floors);
 }
 
+/**
+ * adds passenger to the end of the floor queue, updating the floor load metrics
+ */
 void floor_enqueue_passenger(Floor* floor, PassengerNode* p)
 {
     mutex_lock_interruptible(&floor->queue_lock);
@@ -133,13 +136,6 @@ void floor_enqueue_passenger(Floor* floor, PassengerNode* p)
     floor->load_in_units  += PASSENGER_UNITS[p->passenger_type];
     list_add_tail(&p->queue, &floor->queue);
     mutex_unlock(&floor->queue_lock);
-}
-
-PassengerNode* floor_dequeue_passenger(Floor* floor)
-{
-    mutex_lock_interruptible(&floor->queue_lock);
-    mutex_unlock(&floor->queue_lock);
-    return NULL;
 }
 
 void floor_print(Floor* floor)
@@ -155,6 +151,7 @@ void floor_print(Floor* floor)
     mutex_unlock(&floor->queue_lock);
 }
 
+
 void print_floors_array(Floor** floors, int num_floors)
 {
     int i;
@@ -164,7 +161,6 @@ void print_floors_array(Floor** floors, int num_floors)
     printk("------------------------------------------------------------------\n");
 }
 
-PassengerNode* floor_queue_front(Floor* floor){return NULL;}
 
 /**
  ************************************************************************************
@@ -186,26 +182,27 @@ typedef struct {
     int next_floor;
     int load_in_weight;              /* load in weight across all floors */
     int load_in_units;                      /* load in units across all floors */
-    struct list_head passengers;            /* linked list of the passengers */
+    struct list_head queue;            /* queue of the passengers */
 } Elevator;
 
 static Elevator *elevator;                  /* global pointer to the elevator instance */
 static struct task_struct *elevator_kthread; /* holds the pointer to the thread running the elevator */
 
-
+/**
+ *
+ */
 Elevator* elevator_create(void)
 {
-    int i;
     Elevator * elv = kcalloc(1, sizeof(Elevator), GFP_KERNEL);
     elv->state = OFFLINE;
-    elv->current_floor = 0;
-    elv->next_floor = 0;
-    elv->load_in_weight = 0.0;
-    elv->load_in_units = 0.0;
-    INIT_LIST_HEAD(&elv->passengers);
+    INIT_LIST_HEAD(&elv->queue);
     return elv;
 }
 
+/**
+ * free the elevator `elv`, making sure to free all passengers in its queue
+ * NOTE: by the time this is called, the elevator should have unloaded all passengers
+ */
 void elevator_free(Elevator* elv)
 {
     /* at time of elevator_free, the elevator should be void of passengers
@@ -214,7 +211,7 @@ void elevator_free(Elevator* elv)
     struct list_head *cur, *dummy;
     PassengerNode *passenger_node;
     /* free the linked list of passenger nodes from the elevator */
-    list_for_each_safe(cur, dummy, &elv->passengers) {
+    list_for_each_safe(cur, dummy, &elv->queue) {
         passenger_node = list_entry(cur, PassengerNode, queue);
         list_del(cur);
         kfree(passenger_node);
@@ -222,9 +219,12 @@ void elevator_free(Elevator* elv)
     kfree(elv);
 }
 
-int elevator_run(void *arg)
+/**
+ *
+ */
+int elevator_run(void *args)
 {
-    Elevator *elv = (Elevator*) arg;
+    Elevator *elv = (Elevator*) args;
     while (!kthread_should_stop()) {
         printk("elevator scanning\n");
         ssleep(30);
@@ -232,9 +232,12 @@ int elevator_run(void *arg)
     return 0;
 }
 
+/**
+ * start the elevator by spawning a thread to scan the floors
+ * @return: 1 if the elevator is already active, 0 for a successful elevator start
+ */
 int elevator_start(Elevator *elv)
 {
-    /* ...will return 1 if the elevator is already active, 0 for a successful elevator start */
     if (elv->state != OFFLINE)
         return 1;
     elv->state = IDLE;
@@ -247,11 +250,51 @@ int elevator_start(Elevator *elv)
     return 0;
 }
 
-void elevator_load_passenger(Elevator *elv, PassengerNode *p){}
+/**
+ * naive algortihm that picks up as many people as possible, regardless of direction
+ * NOTE: spec mandates that the elevator must pick up people heading in the same direction
+ */
+void elevator_load_floor(Elevator *elv, Floor *floor)
+{
+    PassengerNode *p; /* person at front of line */
+    int can_fit, p_weight, p_units;
+    /* naive - load as many people as possible */
+    mutex_lock_interruptible(&floor->queue_lock);
+    while (!list_empty(&floor->queue)) {
+        p = list_first_entry(&floor->queue, PassengerNode, queue);
+        p_weight = PASSENGER_WEIGHTS[p->passenger_type];
+        p_units = PASSENGER_UNITS[p->passenger_type];
+        /* TODO: handle fractional weights and units */
+        can_fit = ((elv->load_in_weight + p_weight <= MAX_LOAD_WEIGHT) &&
+                   (elv->load_in_units + p_units <= MAX_LOAD_UNITS));
+        if (!can_fit)
+            break;
+        /* remove person from the floor queue and put them into the elevator queue */
+        list_del(&p->queue);
+        floor->passengers_served++;
+        list_add_tail(&p->queue, &elv->queue);
+        elv->load_in_weight += p_weight;
+        elv->load_in_units += p_units;
+    }
+    mutex_unlock(&floor->queue_lock);
+}
 
-void elevator_load_floor(Elevator *elv, Floor *floor){}
-
-void elevator_unload_passengers(Elevator *elv, Floor *floor){}
+/**
+ * remove and free all passengers that are at their destination
+ */
+void elevator_unload_passengers(Elevator *elv, int floor_num)
+{
+    struct list_head *cur, *dummy;
+    PassengerNode *p;
+    /* remove passengers at their desitnation */
+    list_for_each_safe(cur, dummy, &elv->queue) {
+        p = list_entry(cur, PassengerNode, queue);
+        if (p->destination_floor == floor_num){
+            list_del(cur);
+            kfree(p);
+        }
+    }
+}
 
 
 /**
@@ -277,14 +320,14 @@ long start_elevator(void)
 
 long issue_request(int passenger_type, int start_floor, int destination_floor)
 {
+    PassengerNode *p;
     start_floor--; destination_floor--; /* requests are issued using 1-indexed vals */
     if ((start_floor < MIN_FLOOR || start_floor > MAX_FLOOR) ||
         (destination_floor < MIN_FLOOR || destination_floor > MAX_FLOOR)) {
         printk("issue_request: invalid floor value(s), start: %d, end: %d\n", start_floor, destination_floor);
         return 1;
     }
-    printk(KERN_DEBUG "issuing a request type: %d, start: %d, dest: %d\n", passenger_type, start_floor, destination_floor);
-    PassengerNode *p = passenger_node_create(passenger_type, destination_floor);
+    p = passenger_node_create(passenger_type, destination_floor);
     if (!p)
         return 1;
     floor_enqueue_passenger(floors[start_floor], p);
