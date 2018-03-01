@@ -17,7 +17,7 @@ int start_elevator()
 
 int issue_request(int passenger_type, int start_floor, int destination_floor)
 {
-    return syscall(__NR_ISSUE_REQUEST);
+    return syscall(__NR_ISSUE_REQUEST, passenger_type, start_floor, destination_floor);
 }
 
 
