@@ -66,7 +66,7 @@ PassengerNode *passenger_node_create(PassengerType passenger_type, int destinati
 
 typedef struct {
     struct list_head queue;     /* queue that holds the passengers (via `PassengerNodes`)*/
-    struct mutex queue_lock;    /* ensure only one person modifying queue at once */
+    struct mutex lock;    /* ensure only one person modifying queue at once */
     int passengers_served;      /* total so far, **not including** people in queue */
     int floor_num;
     int load_in_weight;
@@ -94,13 +94,13 @@ void floor_free(Floor* floor)
     struct list_head *cur, *dummy;
     PassengerNode *passenger_node;
     /* free the linked list of passenger nodes from the floor queue */
-    mutex_lock_interruptible(&floor->queue_lock);
+    mutex_lock_interruptible(&floor->lock);
     list_for_each_safe(cur, dummy, &floor->queue) {
         passenger_node = list_entry(cur, PassengerNode, queue);
         list_del(cur);
         kfree(passenger_node);
     }
-    mutex_unlock(&floor->queue_lock);
+    mutex_unlock(&floor->lock);
     kfree(floor);
 }
 
@@ -132,11 +132,11 @@ void free_floors_array(Floor** floors, int num_floors)
  */
 void floor_enqueue_passenger(Floor* floor, PassengerNode* p)
 {
-    mutex_lock_interruptible(&floor->queue_lock);
+    mutex_lock_interruptible(&floor->lock);
     floor->load_in_weight += PASSENGER_WEIGHTS[p->passenger_type];
     floor->load_in_units  += PASSENGER_UNITS[p->passenger_type];
     list_add_tail(&p->queue, &floor->queue);
-    mutex_unlock(&floor->queue_lock);
+    mutex_unlock(&floor->lock);
 }
 
 void floor_print(Floor* floor)
@@ -144,12 +144,12 @@ void floor_print(Floor* floor)
     PassengerNode *p;
     if (list_empty(&floor->queue))
         return;
-    mutex_lock_interruptible(&floor->queue_lock);
+    mutex_lock_interruptible(&floor->lock);
     printk("Floor %d: ", floor->floor_num);
     list_for_each_entry(p, &floor->queue, queue) {
         printk(KERN_CONT "{Type: %d, Dest: %d},  ", p->passenger_type, p->destination_floor);
     }
-    mutex_unlock(&floor->queue_lock);
+    mutex_unlock(&floor->lock);
 }
 
 
@@ -178,13 +178,14 @@ typedef enum {
 
 
 typedef struct {
-    ElevatorState state;                /* enum of possible states */
+    struct list_head queue;     /* queue of the passengers */
+    struct mutex lock;    /* lock to stop the elevator from being modified */
+    ElevatorState state;        /* enum of possible states */
     int current_floor;
     int next_floor;
     int num_passengers;
     int load_in_weight;
     int load_in_units;
-    struct list_head queue;                     /* queue of the passengers */
 } Elevator;
 
 static Elevator *elevator;                      /* global pointer to the elevator instance */
@@ -201,36 +202,47 @@ Elevator* elevator_create(void)
 
 
 
-/* step one floor in the current direction */
-void elevator_step(Elevator *elv)
+/* step one floor in the `direction` */
+void elevator_step(Elevator *elv, ElevatorState direction)
 {
-    int delta = elv->state == UP ? 1 : -1;
-    elv->next_floor = elv->current_floor + delta;
-    ssleep(TIME_BETWEEN_FLOORS);
+    int delta = direction == UP ? 1 : -1;
+    mutex_lock_interruptible(&elv->lock);
+    elv->state = direction;
     elv->current_floor = elv->next_floor;
+    elv->next_floor = elv->current_floor + delta;
+    mutex_unlock(&elv->lock);
+    ssleep(TIME_BETWEEN_FLOORS);
 }
 
 /* move to `dest_floor` without servicing anybody on the way */
 void elevator_move_to(Elevator *elv, int dest_floor)
 {
     int delta = dest_floor > elv->current_floor ? 1 : -1;
+    mutex_lock_interruptible(&elv->lock);
     elv->state = dest_floor > elv->current_floor ? UP : DOWN;
     elv->next_floor = dest_floor; /* next floor to *service* */
+    mutex_unlock(&elv->lock);
     while (elv->current_floor != dest_floor) {
+        /* switch off locking and unlocking because moving between floors is very slow */
+        mutex_lock_interruptible(&elv->lock);
         elevator->current_floor += delta;
+        mutex_unlock(&elv->lock);
         ssleep(TIME_BETWEEN_FLOORS);
     }
 }
 
 
 /**
- * Reset the scan direction based on the first passenger waiting on the elevators current floor
+ * Reset the scan direction and next floor based on the first passenger waiting on the elevators current floor
  * NOTE: this function requires that a the current floor contains at least one passenger
  */
-void elevator_reset_direction(Elevator *elv)
+void elevator_setup_scan(Elevator *elv)
 {
     PassengerNode *p = list_first_entry(&floors[elv->current_floor]->queue, PassengerNode, queue);
+    mutex_lock_interruptible(&elv->lock);
     elv->state = p->destination_floor > elv->current_floor ? UP : DOWN;
+    elv->next_floor = elv->state == UP ? elv->current_floor + 1 : elv->current_floor - 1;
+    mutex_unlock(&elv->lock);
 }
 
 
@@ -238,17 +250,16 @@ void elevator_reset_direction(Elevator *elv)
  * coming from IDLE state, try to find a floor that has someone waiting, move there, and start a scan to their dest
  * if no one is waiting, maintain the IDLE state and put the thread to sleep via `schedule`
  */
-void elevator_service_or_sleep(Elevator *elv)
+void elevator_try_to_start_scan(Elevator *elv)
 {
     int i;
     for (i = 0; i <= MAX_FLOOR; i++){
         if (!list_empty(&floors[i]->queue)) {
             elevator_move_to(elv, i);
-            elevator_reset_direction(elv);
+            elevator_setup_scan(elv);
             return;
         }
     }
-    elv->next_floor = -1; /* mark for sleeping */
     schedule();
 }
 
@@ -261,8 +272,10 @@ void elevator_load_passengers(Elevator *elv)
     PassengerNode *p; /* person at front of line */
     int can_fit, same_direction, p_weight, p_units;
     Floor *floor = floors[elv->current_floor];
-    /* naive - load as many people as possible */
-    mutex_lock_interruptible(&floor->queue_lock);
+
+    mutex_lock_interruptible(&floor->lock);
+    mutex_lock_interruptible(&elv->lock);
+    elv->state = LOADING;
     while (!list_empty(&floor->queue)) {
         p = list_first_entry(&floor->queue, PassengerNode, queue);
         p_weight = PASSENGER_WEIGHTS[p->passenger_type];
@@ -272,17 +285,21 @@ void elevator_load_passengers(Elevator *elv)
                    (elv->load_in_units + p_units <= MAX_LOAD_UNITS));
         same_direction = ((elv->state == UP && p->destination_floor > elv->current_floor) ||
                           (elv->state == DOWN && p->destination_floor < elv->current_floor));
+
         if (!can_fit || !same_direction)
             break;
+
         /* remove person from the floor queue and put them into the elevator queue */
         list_del(&p->queue);
         floor->passengers_served++;
+
         list_add_tail(&p->queue, &elv->queue);
         elv->num_passengers++;
         elv->load_in_weight += p_weight;
         elv->load_in_units += p_units;
     }
-    mutex_unlock(&floor->queue_lock);
+    mutex_unlock(&elv->lock);
+    mutex_unlock(&floor->lock);
 }
 
 
@@ -293,21 +310,26 @@ void elevator_unload_passengers(Elevator *elv)
 {
     struct list_head *cur, *dummy;
     PassengerNode *p;
+    mutex_lock_interruptible(&elv->lock);
+    elv->state = LOADING;
     /* remove passengers at their desitnation */
     list_for_each_safe(cur, dummy, &elv->queue) {
         p = list_entry(cur, PassengerNode, queue);
         if (p->destination_floor == elv->current_floor){
             list_del(cur);
             elv->num_passengers--;
+            elv->load_in_weight -= PASSENGER_WEIGHTS[p->passenger_type];
+            elv->load_in_units -= PASSENGER_UNITS[p->passenger_type];
             kfree(p);
         }
     }
+    mutex_unlock(&elv->lock);
 }
 
 
 
 /**
- * services passengers via the SCAN algrotihm (running in a separate thread)
+ * services passengers via the SCAN algrotihm (this runs in a separate thread)
  */
 int elevator_run(void *args)
 {
@@ -315,19 +337,20 @@ int elevator_run(void *args)
     Elevator *elv = (Elevator*) args; /* `kthread_run` passes in pointer of the args */
     while (!kthread_should_stop()) {
         if (elv->state == IDLE) {
-            /* scan for someone to service, or sleep if there is no-one */
-            elevator_service_or_sleep(elv);
+            /* look for someone to service or sleep if there is no-one */
+            elevator_try_to_start_scan(elv);
         }
         else {
             direction = elv->state; /* save direction */
-            elv->state = LOADING;
             elevator_unload_passengers(elv);
-            if (elv->num_passengers == 0)
+            if (elv->num_passengers == 0){
+                /* once the car is empty, we have finished our current scan and can start a new one */
                 elv->state = IDLE;
+            }
             else {
+                /* continue the current scan */
                 elevator_load_passengers(elv);
-                elv->state = direction;
-                elevator_step(elv);
+                elevator_step(elv, direction);
             }
         }
     }
@@ -471,7 +494,6 @@ ssize_t elevator_proc_read(struct file *sp_file, char __user *buf, size_t size, 
 
     read_p = !read_p;
     if (read_p)
-
         return 0;
 
     copy_to_user(buf, message, len);
