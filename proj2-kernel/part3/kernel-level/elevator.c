@@ -4,6 +4,7 @@
 #include <linux/kthread.h>  /* kthread_run, kthread_stop */
 #include <linux/module.h>   /* module_init, module_exit */
 #include <linux/mutex.h>    /* mutex */
+#include <linux/sched.h>    /* schedule */
 #include <linux/linkage.h>
 #include <linux/uaccess.h>
 #include <linux/slab.h>     /* kmalloc, kfree */
@@ -177,20 +178,19 @@ typedef enum {
 
 
 typedef struct {
-    ElevatorState state;                    /* enum of possible states */
+    ElevatorState state;                /* enum of possible states */
     int current_floor;
     int next_floor;
-    int load_in_weight;              /* load in weight across all floors */
-    int load_in_units;                      /* load in units across all floors */
-    struct list_head queue;            /* queue of the passengers */
+    int num_passengers;
+    int load_in_weight;
+    int load_in_units;
+    struct list_head queue;                     /* queue of the passengers */
 } Elevator;
 
-static Elevator *elevator;                  /* global pointer to the elevator instance */
-static struct task_struct *elevator_kthread; /* holds the pointer to the thread running the elevator */
+static Elevator *elevator;                      /* global pointer to the elevator instance */
+static struct task_struct *elevator_kthread;    /* holds the pointer to the thread running the elevator */
 
-/**
- *
- */
+/* return an allocated and initialized elevator */
 Elevator* elevator_create(void)
 {
     Elevator * elv = kcalloc(1, sizeof(Elevator), GFP_KERNEL);
@@ -198,6 +198,162 @@ Elevator* elevator_create(void)
     INIT_LIST_HEAD(&elv->queue);
     return elv;
 }
+
+
+
+/* step one floor in the current direction */
+void elevator_step(Elevator *elv)
+{
+    int delta = elv->state == UP ? 1 : -1;
+    elv->next_floor = elv->current_floor + delta;
+    ssleep(TIME_BETWEEN_FLOORS);
+    elv->current_floor = elv->next_floor;
+}
+
+/* move to `dest_floor` without servicing anybody on the way */
+void elevator_move_to(Elevator *elv, int dest_floor)
+{
+    int delta = dest_floor > elv->current_floor ? 1 : -1;
+    elv->state = dest_floor > elv->current_floor ? UP : DOWN;
+    elv->next_floor = dest_floor; /* next floor to *service* */
+    while (elv->current_floor != dest_floor) {
+        elevator->current_floor += delta;
+        ssleep(TIME_BETWEEN_FLOORS);
+    }
+}
+
+
+/**
+ * Reset the scan direction based on the first passenger waiting on the elevators current floor
+ * NOTE: this function requires that a the current floor contains at least one passenger
+ */
+void elevator_reset_direction(Elevator *elv)
+{
+    PassengerNode *p = list_first_entry(&floors[elv->current_floor]->queue, PassengerNode, queue);
+    elv->state = p->destination_floor > elv->current_floor ? UP : DOWN;
+}
+
+
+/**
+ * coming from IDLE state, try to find a floor that has someone waiting, move there, and start a scan to their dest
+ * if no one is waiting, maintain the IDLE state and put the thread to sleep via `schedule`
+ */
+void elevator_service_or_sleep(Elevator *elv)
+{
+    int i;
+    for (i = 0; i <= MAX_FLOOR; i++){
+        if (!list_empty(&floors[i]->queue)) {
+            elevator_move_to(elv, i);
+            elevator_reset_direction(elv);
+            return;
+        }
+    }
+    elv->next_floor = -1; /* mark for sleeping */
+    schedule();
+}
+
+/**
+ * picks up as many people moving in the same direciton as possible
+ * NOTE: spec mandates that the elevator must pick up people heading in the same direction
+ */
+void elevator_load_passengers(Elevator *elv)
+{
+    PassengerNode *p; /* person at front of line */
+    int can_fit, same_direction, p_weight, p_units;
+    Floor *floor = floors[elv->current_floor];
+    /* naive - load as many people as possible */
+    mutex_lock_interruptible(&floor->queue_lock);
+    while (!list_empty(&floor->queue)) {
+        p = list_first_entry(&floor->queue, PassengerNode, queue);
+        p_weight = PASSENGER_WEIGHTS[p->passenger_type];
+        p_units = PASSENGER_UNITS[p->passenger_type];
+        /* TODO: handle fractional weights and units */
+        can_fit = ((elv->load_in_weight + p_weight <= MAX_LOAD_WEIGHT) &&
+                   (elv->load_in_units + p_units <= MAX_LOAD_UNITS));
+        same_direction = ((elv->state == UP && p->destination_floor > elv->current_floor) ||
+                          (elv->state == DOWN && p->destination_floor < elv->current_floor));
+        if (!can_fit || !same_direction)
+            break;
+        /* remove person from the floor queue and put them into the elevator queue */
+        list_del(&p->queue);
+        floor->passengers_served++;
+        list_add_tail(&p->queue, &elv->queue);
+        elv->num_passengers++;
+        elv->load_in_weight += p_weight;
+        elv->load_in_units += p_units;
+    }
+    mutex_unlock(&floor->queue_lock);
+}
+
+
+/**
+ * remove and free all passengers that are at their destination
+ */
+void elevator_unload_passengers(Elevator *elv)
+{
+    struct list_head *cur, *dummy;
+    PassengerNode *p;
+    /* remove passengers at their desitnation */
+    list_for_each_safe(cur, dummy, &elv->queue) {
+        p = list_entry(cur, PassengerNode, queue);
+        if (p->destination_floor == elv->current_floor){
+            list_del(cur);
+            elv->num_passengers--;
+            kfree(p);
+        }
+    }
+}
+
+
+
+/**
+ * services passengers via the SCAN algrotihm (running in a separate thread)
+ */
+int elevator_run(void *args)
+{
+    ElevatorState direction;
+    Elevator *elv = (Elevator*) args; /* `kthread_run` passes in pointer of the args */
+    while (!kthread_should_stop()) {
+        if (elv->state == IDLE) {
+            /* scan for someone to service, or sleep if there is no-one */
+            elevator_service_or_sleep(elv);
+        }
+        else {
+            direction = elv->state; /* save direction */
+            elv->state = LOADING;
+            elevator_unload_passengers(elv);
+            if (elv->num_passengers == 0)
+                elv->state = IDLE;
+            else {
+                elevator_load_passengers(elv);
+                elv->state = direction;
+                elevator_step(elv);
+            }
+        }
+    }
+    return 0;
+}
+
+
+/**
+ * start the elevator by spawning a thread to scan the floors
+ * @return: 1 if the elevator is already active, 0 for a successful elevator start
+ */
+int elevator_start(Elevator *elv)
+{
+    if (elv->state != OFFLINE)
+        return 1;
+    elv->state = IDLE;
+    /* spawn a thread to `run` the elevator */
+    elevator_kthread = kthread_run(elevator_run, elv, "elevator_run");
+    if (IS_ERR(elevator_kthread)) {
+        printk("ERROR: kthread_run(elevator_run, ...)\n");
+        return PTR_ERR(elevator_kthread);
+    }
+    return 0;
+}
+
+
 
 /**
  * free the elevator `elv`, making sure to free all passengers in its queue
@@ -219,82 +375,6 @@ void elevator_free(Elevator* elv)
     kfree(elv);
 }
 
-/**
- *
- */
-int elevator_run(void *args)
-{
-    Elevator *elv = (Elevator*) args;
-    while (!kthread_should_stop()) {
-        printk("elevator scanning\n");
-        ssleep(30);
-    }
-    return 0;
-}
-
-/**
- * start the elevator by spawning a thread to scan the floors
- * @return: 1 if the elevator is already active, 0 for a successful elevator start
- */
-int elevator_start(Elevator *elv)
-{
-    if (elv->state != OFFLINE)
-        return 1;
-    elv->state = IDLE;
-    /* spawn a thread to `run` the elevator */
-    elevator_kthread = kthread_run(elevator_run, elv, "elevator_run");
-    if (IS_ERR(elevator_kthread)) {
-        printk("ERROR: kthread_run(elevator_run, ...)\n");
-        return PTR_ERR(elevator_kthread);
-    }
-    return 0;
-}
-
-/**
- * naive algortihm that picks up as many people as possible, regardless of direction
- * NOTE: spec mandates that the elevator must pick up people heading in the same direction
- */
-void elevator_load_floor(Elevator *elv, Floor *floor)
-{
-    PassengerNode *p; /* person at front of line */
-    int can_fit, p_weight, p_units;
-    /* naive - load as many people as possible */
-    mutex_lock_interruptible(&floor->queue_lock);
-    while (!list_empty(&floor->queue)) {
-        p = list_first_entry(&floor->queue, PassengerNode, queue);
-        p_weight = PASSENGER_WEIGHTS[p->passenger_type];
-        p_units = PASSENGER_UNITS[p->passenger_type];
-        /* TODO: handle fractional weights and units */
-        can_fit = ((elv->load_in_weight + p_weight <= MAX_LOAD_WEIGHT) &&
-                   (elv->load_in_units + p_units <= MAX_LOAD_UNITS));
-        if (!can_fit)
-            break;
-        /* remove person from the floor queue and put them into the elevator queue */
-        list_del(&p->queue);
-        floor->passengers_served++;
-        list_add_tail(&p->queue, &elv->queue);
-        elv->load_in_weight += p_weight;
-        elv->load_in_units += p_units;
-    }
-    mutex_unlock(&floor->queue_lock);
-}
-
-/**
- * remove and free all passengers that are at their destination
- */
-void elevator_unload_passengers(Elevator *elv, int floor_num)
-{
-    struct list_head *cur, *dummy;
-    PassengerNode *p;
-    /* remove passengers at their desitnation */
-    list_for_each_safe(cur, dummy, &elv->queue) {
-        p = list_entry(cur, PassengerNode, queue);
-        if (p->destination_floor == floor_num){
-            list_del(cur);
-            kfree(p);
-        }
-    }
-}
 
 
 /**
@@ -327,12 +407,19 @@ long issue_request(int passenger_type, int start_floor, int destination_floor)
         printk("issue_request: invalid floor value(s), start: %d, end: %d\n", start_floor, destination_floor);
         return 1;
     }
-    p = passenger_node_create(passenger_type, destination_floor);
-    if (!p)
-        return 1;
-    floor_enqueue_passenger(floors[start_floor], p);
-    print_floors_array(floors, NUM_FLOORS);
+    else if (start_floor == destination_floor) {
+        /* don't even bother enqueueing if the passenger doesn't need to go anywhere */
+        floors[start_floor]->passengers_served++;
+    }
+    else {
+        p = passenger_node_create(passenger_type, destination_floor);
+        if (!p)
+            return 1;
+        floor_enqueue_passenger(floors[start_floor], p);
+        print_floors_array(floors, NUM_FLOORS);
+    }
     return 0;
+
 }
 
 long stop_elevator(void)
@@ -384,6 +471,7 @@ ssize_t elevator_proc_read(struct file *sp_file, char __user *buf, size_t size, 
 
     read_p = !read_p;
     if (read_p)
+
         return 0;
 
     copy_to_user(buf, message, len);
