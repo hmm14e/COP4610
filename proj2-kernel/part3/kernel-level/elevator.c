@@ -32,9 +32,9 @@ MODULE_DESCRIPTION("Module implementing an elevator");
 
 
 /**
- ************************************************************************************
- **************************** Passenger Implementation ******************************
- ************************************************************************************
+ ***********************************************************************************************************************
+ ********************************************** Passenger Implementation ***********************************************
+ ***********************************************************************************************************************
  */
 typedef enum {
     CHILD,
@@ -68,9 +68,9 @@ PassengerNode *passenger_node_create(PassengerType passenger_type, int destinati
 }
 
 /**
- ************************************************************************************
- ***************************** Floor Implementation *********************************
- ************************************************************************************
+ ***********************************************************************************************************************
+ *********************************************** Floor Implementation **************************************************
+ ***********************************************************************************************************************
  */
 
 typedef struct {
@@ -190,9 +190,9 @@ int floor_print_buf(Floor *floor, char *buf, size_t buf_size)
 }
 
 /**
- ************************************************************************************
- **************************** Elevator Implementation *******************************
- ************************************************************************************
+ ***********************************************************************************************************************
+ ********************************************** Elevator Implementation ************************************************
+ ***********************************************************************************************************************
  */
 typedef enum {
     OFFLINE,    /* elevator isn't running but the module is loaded (initial state) */
@@ -206,8 +206,9 @@ const char *ELEVATOR_STATE_STRINGS[] = {"OFFLINE", "IDLE", "LOADING", "UP", "DOW
 
 typedef struct {
     struct list_head queue;     /* queue of the passengers */
-    struct mutex lock;    /* lock to stop the elevator from being modified */
+    struct mutex lock;          /* lock to stop the elevator from being modified */
     ElevatorState state;        /* enum of possible states */
+    int stopping;               /* hacky flag to indicate whether the elevator is in the process of stopping or not */
     int current_floor;
     int next_floor;
     int num_passengers;
@@ -382,12 +383,9 @@ void elevator_try_to_start_scan(Elevator *elv)
             elevator_setup_scan(elv);
             elevator_load_passengers(elv);
             elevator_step(elv);
-            printk("elevator_try_to_start_scan: found someone on floor %d\n", i);
             return;
         }
     }
-    ssleep(5);
-    printk("elevator_try_to_start_scan: no one waiting, scheduling\n");
     schedule();
 }
 
@@ -440,6 +438,40 @@ int elevator_start(Elevator *elv)
 }
 
 
+/* before going offline, elevator must unload ALL passengers */
+int elevator_unload_all(void *data)
+{
+    Elevator *elv = (Elevator*) data;
+    int i;
+    /* very naive, start at floor 0 and just work way up to 10, unloading on the way */
+    elevator_move_to(elv, 0);
+    mutex_lock_interruptible(&elv->lock);
+    elv->state = UP;
+    mutex_unlock(&elv->lock);
+    for (i = 0; i <= MAX_FLOOR; i++) {
+        elevator_unload_passengers(elv);
+        elevator_step(elv);
+    }
+    mutex_lock_interruptible(&elv->lock);
+    elv->state = OFFLINE;
+    mutex_unlock(&elv->lock);
+    do_exit(0); /* exit the thread */
+}
+
+
+/* unload all passengers when the stop_elevator syscall is called */
+int elevator_stop(Elevator *elv)
+{
+    if (elv->stopping)
+        return 1;
+    elv->stopping = 1;
+    /* stop the `elevator_run` thread */
+    kthread_stop(elevator_kthread);
+    /* start a separate thread to unload all the passengers (since it is very time consuming) */
+    kthread_run(elevator_unload_all, elv, "elevator_unload_all");
+    return 0;
+}
+
 
 /**
  * free the elevator `elv`, making sure to free all passengers in its queue
@@ -464,9 +496,9 @@ void elevator_free(Elevator* elv)
 
 
 /**
- ************************************************************************************
- ********************************* Syscall Functions ********************************
- ************************************************************************************
+ ***********************************************************************************************************************
+ *********************************************** Syscall Functions *****************************************************
+ ***********************************************************************************************************************
  */
 
 /* STUB pointers (were exported in the wrappers) that "register" the sys call functions */
@@ -511,8 +543,7 @@ long issue_request(int passenger_type, int start_floor, int destination_floor)
 long stop_elevator(void)
 {
     printk(KERN_INFO "stopping the elevator service\n");
-    kthread_stop(elevator_kthread);
-    return 0;
+    return elevator_stop(elevator);
 }
 
 static void register_syscalls(void)
@@ -532,9 +563,9 @@ static void remove_syscalls(void)
 
 
 /**
- ************************************************************************************
- ********************************* Procfs Functions *********************************
- ************************************************************************************
+ ***********************************************************************************************************************
+ ************************************************** Procfs Functions ***************************************************
+ ***********************************************************************************************************************
  */
 
 static struct file_operations fops; /* proc file operaitons */
@@ -577,9 +608,9 @@ int elevator_proc_release(struct inode *sp_inode, struct file *sp_file) {
 }
 
 /**
- ************************************************************************************
- ********************************* Module Functions *********************************
- ************************************************************************************
+ ***********************************************************************************************************************
+ ************************************************** Module Functions ***************************************************
+ ***********************************************************************************************************************
  */
 
 
