@@ -211,6 +211,7 @@ typedef struct {
     int current_floor;
     int next_floor;
     int num_passengers;
+    int total_serviced;
     int load_in_weight;
     int load_in_units;
 } Elevator;
@@ -237,16 +238,19 @@ int elevator_print_buf(Elevator *elv, char *buf, size_t buf_size)
     return snprintf(
         buf,
         buf_size,
-        "Elevator status\n"          \
-        "State: \t\t\t%s\n"        \
-        "Floor:\t\t\t%d\n"         \
-        "Next floor:\t\t%d\n"      \
-        "Load (weight):\t\t%d\n"   \
-        "Load (units):\t\t%d\n"    \
+        "Elevator status\n"         \
+        "State: \t\t\t%s\n"         \
+        "Floor:\t\t\t%d\n"          \
+        "Next floor:\t\t%d\n"       \
+        "Load (weight):\t\t%d\n"    \
+        "Load (units):\t\t%d\n"     \
+        "Num serviced:\t\t%d\n"       \
+
+
         "--------------------------------------------------------------\n",
         ELEVATOR_STATE_STRINGS[elv->state], elv->current_floor + 1,
         elv->state != IDLE ? elv->next_floor + 1 : -1,
-        elv->load_in_weight, elv->load_in_units
+        elv->load_in_weight, elv->load_in_units, elv->total_serviced
     );
 }
 
@@ -309,7 +313,8 @@ void elevator_load_passengers(Elevator *elv)
         /* remove person from the floor queue and put them into the elevator queue */
         list_del(&p->queue);
         floor->passengers_serviced++;
-
+        floor->load_in_weight -= p_weight;
+        floor->load_in_units -= p_units;
         list_add_tail(&p->queue, &elv->queue);
         elv->num_passengers++;
         elv->load_in_weight += p_weight;
@@ -338,6 +343,7 @@ void elevator_unload_passengers(Elevator *elv)
         if (p->destination_floor == elv->current_floor){
             list_del(cur);
             elv->num_passengers--;
+            elv->total_serviced++;
             elv->load_in_weight -= PASSENGER_WEIGHTS[p->passenger_type];
             elv->load_in_units -= PASSENGER_UNITS[p->passenger_type];
             kfree(p);
@@ -556,7 +562,8 @@ ssize_t elevator_proc_read(struct file *sp_file, char __user *buf, size_t size, 
     len = elevator_print_buf(elevator, buffer, BUFFER_SIZE);
     for (i = 0; i <= MAX_FLOOR; i++) {
         mutex_lock_interruptible(&floors[i]->lock);
-        len += floor_print_buf(floors[i], buffer + len, BUFFER_SIZE - len);
+        if (!list_empty(&floors[i]->queue))
+            len += floor_print_buf(floors[i], buffer + len, BUFFER_SIZE - len);
         mutex_unlock(&floors[i]->lock);
     }
     mutex_unlock(&elevator->lock);
