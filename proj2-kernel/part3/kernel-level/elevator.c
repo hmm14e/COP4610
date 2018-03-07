@@ -497,24 +497,6 @@ int elevator_run(void *args)
 }
 
 
-/**
- * start the elevator by spawning a thread to scan the floors
- * @return: 1 if the elevator is already active, 0 for a successful elevator start
- */
-int elevator_start(Elevator *elv)
-{
-    if (elv->state != OFFLINE)
-        return 1;
-    elv->state = IDLE;
-    /* spawn a thread to `run` the elevator */
-    elevator_kthread = kthread_run(elevator_run, elv, "elevator_run");
-    if (IS_ERR(elevator_kthread)) {
-        printk("ERROR: kthread_run(elevator_run, ...)\n");
-        return PTR_ERR(elevator_kthread);
-    }
-    return 0;
-}
-
 
 /* unload ALL passengers and go offline */
 int elevator_unload_all(void *data)
@@ -537,6 +519,25 @@ int elevator_unload_all(void *data)
     return 0;
 }
 
+
+/**
+ * start the elevator by spawning a thread to scan the floors
+ * @return: 1 if the elevator is already active, 0 for a successful elevator start
+ */
+int elevator_start(Elevator *elv)
+{
+    if (elv->state != OFFLINE)
+        return 1;
+    elv->state = IDLE;
+    elv->stopping = 0;
+    /* spawn a thread to `run` the elevator */
+    elevator_kthread = kthread_run(elevator_run, elv, "elevator_run");
+    if (IS_ERR(elevator_kthread)) {
+        printk("ERROR: kthread_run(elevator_run, ...)\n");
+        return PTR_ERR(elevator_kthread);
+    }
+    return 0;
+}
 
 /* stop picking up any passengers, unload everybody, and set to offline */
 int elevator_stop(Elevator *elv)
