@@ -51,7 +51,7 @@ typedef struct {
 } PassengerNode;
 
 static int PASSENGER_UNITS[4] = {1, 1, 2, 2};
-static int PASSENGER_WEIGHTS[4] = {1, 1, 2, 3};
+static int PASSENGER_WEIGHTS[4] = {0, 1, 2, 3};
 
 PassengerNode *passenger_node_create(PassengerType passenger_type, int destination_floor)
 {
@@ -74,12 +74,13 @@ PassengerNode *passenger_node_create(PassengerType passenger_type, int destinati
  */
 
 typedef struct {
-    struct list_head queue;     /* queue that holds the passengers (via `PassengerNodes`)*/
-    struct mutex lock;    /* ensure only one person modifying queue at once */
-    int passengers_serviced;      /* total so far, **not including** people in queue */
+    struct list_head queue;         /* queue that holds the passengers (via `PassengerNodes`)*/
+    struct mutex lock;              /* ensure only one person modifying queue at once */
+    int passengers_serviced;        /* total so far, **not including** people in queue */
     int floor_num;
-    int load_in_weight;
     int load_in_units;
+    int load_in_weight;
+    int load_in_weight_half;       /* hacky flag to indicate a half value on weight (no FPU in the kernel) */
 } Floor;
 
 /* global variable that holds the array of `Floor`s */
@@ -146,10 +147,39 @@ void free_floors_array(Floor** floors, int num_floors)
 void floor_enqueue_passenger(Floor* floor, PassengerNode* p)
 {
     mutex_lock_interruptible(&floor->lock);
-    floor->load_in_weight += PASSENGER_WEIGHTS[p->passenger_type];
     floor->load_in_units  += PASSENGER_UNITS[p->passenger_type];
+    floor->load_in_weight += PASSENGER_WEIGHTS[p->passenger_type];
+    if (p->passenger_type == CHILD){
+        /* if there was an odd number of children, add 1 to the weight (because now even) */
+        if (floor->load_in_weight_half)
+            floor->load_in_weight++;
+        floor->load_in_weight_half = !floor->load_in_weight_half;
+    }
     list_add_tail(&p->queue, &floor->queue);
     mutex_unlock(&floor->lock);
+}
+
+/**
+ * remove a passenger from the floor queue, being sure to update load metrics
+ * NOTE: caller should hold `floor` lock
+ */
+PassengerNode* floor_dequeue_passenger(Floor *floor)
+{
+    PassengerNode *p;
+    if (list_empty(&floor->queue))
+        return NULL;
+    p = list_first_entry(&floor->queue, PassengerNode, queue);
+    list_del(&p->queue);
+    floor->passengers_serviced++;
+    floor->load_in_weight -= PASSENGER_WEIGHTS[p->passenger_type];
+    floor->load_in_units -= PASSENGER_UNITS[p->passenger_type];
+    if (p->passenger_type == CHILD) {
+        /* if there was an even number of children, then subtract 1 from weight (beacuse now odd)*/
+        if (!floor->load_in_weight_half)
+            floor->load_in_weight--;
+        floor->load_in_weight_half = !floor->load_in_weight_half;
+    }
+    return p;
 }
 
 void floor_print(Floor* floor)
@@ -208,13 +238,15 @@ typedef struct {
     struct list_head queue;     /* queue of the passengers */
     struct mutex lock;          /* lock to stop the elevator from being modified */
     ElevatorState state;        /* enum of possible states */
+    ElevatorState direction;    /* save the direction for when state is LOADING */
     int stopping;               /* hacky flag to indicate whether the elevator is in the process of stopping or not */
     int current_floor;
     int next_floor;
     int num_passengers;
     int total_serviced;
-    int load_in_weight;
     int load_in_units;
+    int load_in_weight;
+    int load_in_weight_half;    /* hacky flag to indicate fractional value, since children weight .5 (no FPU in kernel)*/
 } Elevator;
 
 static Elevator *elevator;                      /* global pointer to the elevator instance */
@@ -284,73 +316,115 @@ void elevator_move_to(Elevator *elv, int dest_floor)
     }
 }
 
+/**
+ * returns whether the elevator should load the person at the front of the current floor's queue
+ * currently, this is using the SCAN algortithm, meaning we should pick them up if we're going in the same direction
+ * NOTE: caller should hold locks to both `elv` and `floor`
+ */
+int should_load(Elevator *elv, Floor *floor)
+{
+    PassengerNode *p;
+    int p_weight, p_weight_half, p_units, can_fit, same_direction;
+    p = list_first_entry(&floor->queue, PassengerNode, queue);
+    p_weight = PASSENGER_WEIGHTS[p->passenger_type];
+    p_units = PASSENGER_UNITS[p->passenger_type];
+    p_weight_half = (p->passenger_type == CHILD);
+    if ((!elv->load_in_weight_half && p_weight_half) || (elv->load_in_weight_half && !p_weight_half)) {
+        /* the added weight is fractional, e.g. X.5, so use exclusive less than */
+        can_fit = ((elv->load_in_weight + p_weight < MAX_LOAD_WEIGHT) &&
+                   (elv->load_in_units + p_units <= MAX_LOAD_UNITS));
+    }
+    else {
+        /* the added weight makes a whole weight value, so add 1 (.5 + .5) and make sure it fits */
+        can_fit = ((elv->load_in_weight + p_weight + 1 <= MAX_LOAD_WEIGHT) &&
+                   (elv->load_in_units + p_units <= MAX_LOAD_UNITS));
+    }
+    same_direction = ((elv->direction == UP && p->destination_floor > elv->current_floor) ||
+                      (elv->direction == DOWN && p->destination_floor < elv->current_floor));
+    return (can_fit && same_direction);
+}
+
+/**
+ *load a passenger into the elevator
+ * NOTE: caller should hold `elv` lock
+ */
+void elevator_load_passenger(Elevator *elv, PassengerNode *p)
+{
+    if (!p)
+        return;
+    list_add_tail(&p->queue, &elv->queue);
+    elv->num_passengers++;
+    elv->load_in_weight += PASSENGER_WEIGHTS[p->passenger_type];
+    elv->load_in_units += PASSENGER_UNITS[p->passenger_type];
+    if (p->passenger_type == CHILD){
+        /* if there was an odd number of children, add 1 to the weight (because now even) */
+        if (elv->load_in_weight_half)
+            elv->load_in_weight++;
+        elv->load_in_weight_half = !elv->load_in_weight_half;
+    }
+}
+
+
 
 /**
  * picks up as many people moving in the same direciton as possible
  * NOTE: spec mandates that the elevator must pick up people heading in the same direction
  */
-void elevator_load_passengers(Elevator *elv)
+void elevator_load_floor(Elevator *elv)
 {
-    PassengerNode *p; /* person at front of line */
-    ElevatorState prev_state;
-    int can_fit, same_direction, p_weight, p_units;
     Floor *floor = floors[elv->current_floor];
     mutex_lock_interruptible(&floor->lock);
     mutex_lock_interruptible(&elv->lock);
-    prev_state = elv->state;
+    elv->direction = elv->state;
     elv->state = LOADING;
     while (!list_empty(&floor->queue)) {
-        p = list_first_entry(&floor->queue, PassengerNode, queue);
-        p_weight = PASSENGER_WEIGHTS[p->passenger_type];
-        p_units = PASSENGER_UNITS[p->passenger_type];
-        /* TODO: handle fractional weights and units */
-        can_fit = ((elv->load_in_weight + p_weight <= MAX_LOAD_WEIGHT) &&
-                   (elv->load_in_units + p_units <= MAX_LOAD_UNITS));
-        same_direction = ((prev_state == UP && p->destination_floor > elv->current_floor) ||
-                          (prev_state == DOWN && p->destination_floor < elv->current_floor));
-        if (!can_fit || !same_direction)
+        if (!should_load(elv, floor))
             break;
-
-        /* remove person from the floor queue and put them into the elevator queue */
-        list_del(&p->queue);
-        floor->passengers_serviced++;
-        floor->load_in_weight -= p_weight;
-        floor->load_in_units -= p_units;
-        list_add_tail(&p->queue, &elv->queue);
-        elv->num_passengers++;
-        elv->load_in_weight += p_weight;
-        elv->load_in_units += p_units;
+        elevator_load_passenger(elv, floor_dequeue_passenger(floor));
     }
-    elv->state = prev_state;
+    elv->state = elv->direction; /* restore the direction after finished LOADING */
     mutex_unlock(&elv->lock);
     mutex_unlock(&floor->lock);
 }
 
 
 /**
+ *load a passenger into the elevator
+ * NOTE: caller should hold `elv` lock
+ */
+void elevator_unload_passenger(Elevator *elv, PassengerNode *p)
+{
+    list_del(&p->queue);
+    elv->num_passengers--;
+    elv->total_serviced++;
+    elv->load_in_weight -= PASSENGER_WEIGHTS[p->passenger_type];
+    elv->load_in_units -= PASSENGER_UNITS[p->passenger_type];
+    if (p->passenger_type == CHILD) {
+        /* if there was an even number of children, then subtract 1 from weight (beacuse now odd)*/
+        if (!elv->load_in_weight_half)
+            elv->load_in_weight--;
+        elv->load_in_weight_half = 1;
+    }
+    kfree(p);
+}
+
+/**
  * remove and free all passengers that are at their destination
  */
-void elevator_unload_passengers(Elevator *elv)
+void elevator_unload_floor(Elevator *elv)
 {
     struct list_head *cur, *dummy;
     PassengerNode *p;
-    ElevatorState prev_state;
     mutex_lock_interruptible(&elv->lock);
-    prev_state = elv->state;
+    elv->direction = elv->state;
     elv->state = LOADING;
     /* remove passengers at their desitnation */
     list_for_each_safe(cur, dummy, &elv->queue) {
         p = list_entry(cur, PassengerNode, queue);
-        if (p->destination_floor == elv->current_floor){
-            list_del(cur);
-            elv->num_passengers--;
-            elv->total_serviced++;
-            elv->load_in_weight -= PASSENGER_WEIGHTS[p->passenger_type];
-            elv->load_in_units -= PASSENGER_UNITS[p->passenger_type];
-            kfree(p);
-        }
+        if (p->destination_floor == elv->current_floor)
+            elevator_unload_passenger(elv, p);
     }
-    elv->state = prev_state;
+    elv->state = elv->direction;
     mutex_unlock(&elv->lock);
 }
 
@@ -381,7 +455,7 @@ void elevator_try_to_start_scan(Elevator *elv)
         if (!list_empty(&floors[i]->queue)) {
             elevator_move_to(elv, i);
             elevator_setup_scan(elv);
-            elevator_load_passengers(elv);
+            elevator_load_floor(elv);
             elevator_step(elv);
             return;
         }
@@ -403,14 +477,14 @@ int elevator_run(void *args)
         }
         else {
             /* continue the scan */
-            elevator_unload_passengers(elv);
+            elevator_unload_floor(elv);
             if (elv->num_passengers == 0){
                 /* once the car is empty, we have finished our current scan and can start a new one */
                 elv->state = IDLE;
             }
             else {
                 /* continue the current scan */
-                elevator_load_passengers(elv);
+                elevator_load_floor(elv);
                 elevator_step(elv);
             }
         }
@@ -438,7 +512,7 @@ int elevator_start(Elevator *elv)
 }
 
 
-/* before going offline, elevator must unload ALL passengers */
+/* unload ALL passengers and go offline */
 int elevator_unload_all(void *data)
 {
     Elevator *elv = (Elevator*) data;
@@ -449,17 +523,18 @@ int elevator_unload_all(void *data)
     elv->state = UP;
     mutex_unlock(&elv->lock);
     for (i = 0; i <= MAX_FLOOR; i++) {
-        elevator_unload_passengers(elv);
+        elevator_unload_floor(elv);
         elevator_step(elv);
     }
     mutex_lock_interruptible(&elv->lock);
     elv->state = OFFLINE;
     mutex_unlock(&elv->lock);
     do_exit(0); /* exit the thread */
+    return 0;
 }
 
 
-/* unload all passengers when the stop_elevator syscall is called */
+/* stop picking up any passengers, unload everybody, and set to offline */
 int elevator_stop(Elevator *elv)
 {
     if (elv->stopping)
@@ -540,11 +615,13 @@ long issue_request(int passenger_type, int start_floor, int destination_floor)
 
 }
 
+
 long stop_elevator(void)
 {
     printk(KERN_INFO "stopping the elevator service\n");
     return elevator_stop(elevator);
 }
+
 
 static void register_syscalls(void)
 {
