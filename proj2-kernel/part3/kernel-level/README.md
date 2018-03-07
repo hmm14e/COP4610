@@ -33,8 +33,8 @@
 * There is no floating point arithmetic allowed in kernel-mode, so handling fractional weight units (child 0.5) is tricky. Our implementation uses an internal variable on `Floor` and `Elevator`, `load_in_weight_half`, to keep track of whether there is an even or odd number of children.
 * It wasn't very clear to us when exactly to acquire mutexes in our implementation. 
    * For example, when a function ends up calling other functions, sometimes the lock will be acquired in the caller and the lock is implicit in the callees, and other times it will be acquired in the callees.
-* When `stop_elevator` is called for the first time, the `elevator_run` thread will be stopped and a new thread will be spawned for running `elevator_unload_all` will be created.
-   * Since unloading is a potentially long operation (~20 seconds), we do not want to block successive `stop_elevator` system calls, so we just put it in a thread a let it do its thing.
+* When `stop_elevator` is called for the first time, the `elevator_run` thread will be stopped and a new thread will be spawned for running `elevator_unload_all`.
+   * Since unloading is a potentially long operation (~20 seconds), we do not want to block successive `stop_elevator` system calls, so we just put it in a thread and let it do its thing.
       
    
 ### TODO
