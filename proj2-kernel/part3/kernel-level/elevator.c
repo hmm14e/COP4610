@@ -21,7 +21,7 @@ MODULE_DESCRIPTION("Module implementing an elevator");
 #define PROC_PARENT_DIR NULL
 #define BUFFER_SIZE 5012        /* size of buffer to store the proc/fs buffer */
 
-/* variables for elevator */
+#define NUM_PASSENGER_TYPES 4   /* */
 #define MIN_FLOOR 0             /* min floor number, default position */
 #define MAX_FLOOR 9             /* max floor number (inclusive) */
 #define NUM_FLOORS 10           /* */
@@ -52,6 +52,8 @@ typedef struct {
 
 static int PASSENGER_UNITS[4] = {1, 1, 2, 2};
 static int PASSENGER_WEIGHTS[4] = {0, 1, 2, 3};
+const char *PASSENGER_TYPE_STRINGS[] = {"CHILD", "ADULT", "BELLHOP", "ROOM_SERVICE"};
+
 
 PassengerNode *passenger_node_create(PassengerType passenger_type, int destination_floor)
 {
@@ -207,7 +209,9 @@ void print_floors_array(Floor** floors, int num_floors)
 
 int floor_print_buf(Floor *floor, char *buf, size_t buf_size)
 {
-    return snprintf(
+    int ret;
+    mutex_lock_interruptible(&floor->lock);
+    ret = snprintf(
         buf,
         buf_size,
         "Floor %d status\n"             \
@@ -219,6 +223,8 @@ int floor_print_buf(Floor *floor, char *buf, size_t buf_size)
         floor->load_in_weight_half ? 5 : 0,
         floor->load_in_units, floor->passengers_serviced
     );
+    mutex_unlock(&floor->lock);
+    return ret;
 }
 
 /**
@@ -280,8 +286,6 @@ int elevator_print_buf(Elevator *elv, char *buf, size_t buf_size)
         "Load (weight):\t\t%d.%d\n"    \
         "Load (units):\t\t%d\n"     \
         "Num serviced:\t\t%d\n"       \
-
-
         "--------------------------------------------------------------\n",
         ELEVATOR_STATE_STRINGS[elv->state], elv->current_floor + 1,
         elv->state != IDLE ? elv->next_floor + 1 : -1,
@@ -599,10 +603,14 @@ long start_elevator(void)
 long issue_request(int passenger_type, int start_floor, int destination_floor)
 {
     PassengerNode *p;
-    passenger_type--; start_floor--; destination_floor--; /* requests are issued using 1-indexed vals */
+    start_floor--; destination_floor--; /* requests are issued using 1-indexed vals */
     if ((start_floor < MIN_FLOOR || start_floor > MAX_FLOOR) ||
         (destination_floor < MIN_FLOOR || destination_floor > MAX_FLOOR)) {
         printk("issue_request: invalid floor value(s), start: %d, end: %d\n", start_floor, destination_floor);
+        return 1;
+    }
+    else if ((passenger_type < 0 || passenger_type >= NUM_PASSENGER_TYPES)) {
+        printk("issue_request: invalid passenger type: %d\n", passenger_type);
         return 1;
     }
     else if (start_floor == destination_floor) {
@@ -674,10 +682,7 @@ ssize_t elevator_proc_read(struct file *sp_file, char __user *buf, size_t size, 
     mutex_lock_interruptible(&elevator->lock);
     len = elevator_print_buf(elevator, buffer, BUFFER_SIZE);
     for (i = 0; i <= MAX_FLOOR; i++) {
-        mutex_lock_interruptible(&floors[i]->lock);
-        if (!list_empty(&floors[i]->queue))
-            len += floor_print_buf(floors[i], buffer + len, BUFFER_SIZE - len);
-        mutex_unlock(&floors[i]->lock);
+        len += floor_print_buf(floors[i], buffer + len, BUFFER_SIZE - len);
     }
     mutex_unlock(&elevator->lock);
     copy_to_user(buf, buffer, len);
