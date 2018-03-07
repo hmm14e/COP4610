@@ -211,11 +211,13 @@ int floor_print_buf(Floor *floor, char *buf, size_t buf_size)
         buf,
         buf_size,
         "Floor %d status\n"             \
-        "Load (weight):\t\t%d\n"      \
+        "Load (weight):\t\t%d.%d\n"      \
         "Load (units):\t\t%d\n"       \
         "Passengers serviced:\t%d\n"    \
         "--------------------------------------------------------------\n",
-        floor->floor_num + 1, floor->load_in_weight, floor->load_in_units, floor->passengers_serviced
+        floor->floor_num + 1, floor->load_in_weight,
+        floor->load_in_weight_half ? 5 : 0,
+        floor->load_in_units, floor->passengers_serviced
     );
 }
 
@@ -275,7 +277,7 @@ int elevator_print_buf(Elevator *elv, char *buf, size_t buf_size)
         "State: \t\t\t%s\n"         \
         "Floor:\t\t\t%d\n"          \
         "Next floor:\t\t%d\n"       \
-        "Load (weight):\t\t%d\n"    \
+        "Load (weight):\t\t%d.%d\n"    \
         "Load (units):\t\t%d\n"     \
         "Num serviced:\t\t%d\n"       \
 
@@ -283,7 +285,9 @@ int elevator_print_buf(Elevator *elv, char *buf, size_t buf_size)
         "--------------------------------------------------------------\n",
         ELEVATOR_STATE_STRINGS[elv->state], elv->current_floor + 1,
         elv->state != IDLE ? elv->next_floor + 1 : -1,
-        elv->load_in_weight, elv->load_in_units, elv->total_serviced
+        elv->load_in_weight,
+        elv->load_in_weight_half ? 5 : 0,
+        elv->load_in_units, elv->total_serviced
     );
 }
 
@@ -389,7 +393,7 @@ void elevator_load_floor(Elevator *elv)
 
 
 /**
- *load a passenger into the elevator
+ *load a passenger into the elevator, updating load metrics
  * NOTE: caller should hold `elv` lock
  */
 void elevator_unload_passenger(Elevator *elv, PassengerNode *p)
@@ -403,7 +407,7 @@ void elevator_unload_passenger(Elevator *elv, PassengerNode *p)
         /* if there was an even number of children, then subtract 1 from weight (beacuse now odd)*/
         if (!elv->load_in_weight_half)
             elv->load_in_weight--;
-        elv->load_in_weight_half = 1;
+        elv->load_in_weight_half = !elv->load_in_weight_half;
     }
     kfree(p);
 }
