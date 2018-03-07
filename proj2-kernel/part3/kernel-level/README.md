@@ -35,7 +35,7 @@
    * For example, when a function ends up calling other functions, sometimes the lock will be acquired in the caller and the lock is implicit in the callees, and other times it will be acquired in the callees.
 * When `stop_elevator` is called for the first time, the `elevator_run` thread will be stopped and a new thread will be spawned for running `elevator_unload_all`.
    * Since unloading is a potentially long operation (~20 seconds), we do not want to block successive `stop_elevator` system calls, so we just put it in a thread and let it do its thing.
-      
+* When a request is issued with the same *start_floor* and *end_floor*, the passenger isn't entered into the queue and the passengers served for the floor is incremented.
    
 ### TODO
 * ~~Handle fractional load units~~
