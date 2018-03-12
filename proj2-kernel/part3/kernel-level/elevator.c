@@ -603,7 +603,7 @@ long start_elevator(void)
 long issue_request(int passenger_type, int start_floor, int destination_floor)
 {
     PassengerNode *p;
-    start_floor--; destination_floor--; /* requests are issued using 1-indexed vals */
+    passenger_type--; start_floor--; destination_floor--; /* requests are issued using 1-indexed vals */
     if ((start_floor < MIN_FLOOR || start_floor > MAX_FLOOR) ||
         (destination_floor < MIN_FLOOR || destination_floor > MAX_FLOOR)) {
         printk("issue_request: invalid floor value(s), start: %d, end: %d\n", start_floor, destination_floor);
