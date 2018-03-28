@@ -78,7 +78,8 @@ PassengerNode *passenger_node_create(PassengerType passenger_type, int destinati
 typedef struct {
     struct list_head queue;         /* queue that holds the passengers (via `PassengerNodes`)*/
     struct mutex lock;              /* ensure only one person modifying queue at once */
-    int passengers_serviced;        /* total so far, **not including** people in queue */
+    int num_serviced;                /* number of people serviced, **not including** people in queue */
+    int num_waiting;                /* number of people in queue */
     int floor_num;
     int load_in_units;
     int load_in_weight;
@@ -149,6 +150,7 @@ void free_floors_array(Floor** floors, int num_floors)
 void floor_enqueue_passenger(Floor* floor, PassengerNode* p)
 {
     mutex_lock_interruptible(&floor->lock);
+    floor->num_waiting++;
     floor->load_in_units  += PASSENGER_UNITS[p->passenger_type];
     floor->load_in_weight += PASSENGER_WEIGHTS[p->passenger_type];
     if (p->passenger_type == CHILD){
@@ -172,7 +174,8 @@ PassengerNode* floor_dequeue_passenger(Floor *floor)
         return NULL;
     p = list_first_entry(&floor->queue, PassengerNode, queue);
     list_del(&p->queue);
-    floor->passengers_serviced++;
+    floor->num_serviced++;
+    floor->num_waiting--;
     floor->load_in_weight -= PASSENGER_WEIGHTS[p->passenger_type];
     floor->load_in_units -= PASSENGER_UNITS[p->passenger_type];
     if (p->passenger_type == CHILD) {
@@ -215,13 +218,16 @@ int floor_print_buf(Floor *floor, char *buf, size_t buf_size)
         buf,
         buf_size,
         "Floor %d status\n"             \
-        "Load (weight):\t\t%d.%d\n"      \
-        "Load (units):\t\t%d\n"       \
-        "Passengers serviced:\t%d\n"    \
+        "Load (weight):\t\t%d.%d\n"     \
+        "Load (units):\t\t%d\n"         \
+        "Total waiting:\t\t%d\n"        \
+        "Total serviced:\t\t%d\n"       \
         "--------------------------------------------------------------\n",
-        floor->floor_num + 1, floor->load_in_weight,
-        floor->load_in_weight_half ? 5 : 0,
-        floor->load_in_units, floor->passengers_serviced
+        floor->floor_num + 1,
+        floor->load_in_weight, floor->load_in_weight_half ? 5 : 0,
+        floor->load_in_units,
+        floor->num_waiting,
+        floor->num_serviced
     );
     mutex_unlock(&floor->lock);
     return ret;
@@ -434,6 +440,7 @@ void elevator_unload_floor(Elevator *elv)
     }
     elv->state = elv->direction;
     mutex_unlock(&elv->lock);
+    ssleep(TIME_AT_FLOOR);
 }
 
 
@@ -615,14 +622,13 @@ long issue_request(int passenger_type, int start_floor, int destination_floor)
     }
     else if (start_floor == destination_floor) {
         /* don't even bother enqueueing if the passenger doesn't need to go anywhere */
-        floors[start_floor]->passengers_serviced++;
+        floors[start_floor]->num_serviced++;
     }
     else {
         p = passenger_node_create(passenger_type, destination_floor);
         if (!p)
             return 1;
         floor_enqueue_passenger(floors[start_floor], p);
-        print_floors_array(floors, NUM_FLOORS);
     }
     return 0;
 
