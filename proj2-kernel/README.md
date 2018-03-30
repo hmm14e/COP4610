@@ -3,6 +3,11 @@
 ### Purpose
 This project introduces you to the nuts and bolts of system calls, kernel programming, concurrency, andsynchronization in the kernel. It is divided into three parts.
 
+### Collaborators 
+* William Wagner
+* Hannah McLaughlin
+* Mathew Teply
+
 ### Restrictions
 * C programming language
 * Linux kernel version 4.14.12
